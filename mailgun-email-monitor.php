@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Form Alert
  * Description: Sends all outgoing email directly through the Mailgun HTTP API (no SMTP plugin required), logs every send, reconciles real delivery status via Mailgun webhooks, flags failures, and alerts by email + SMS (Twilio).
- * Version:     2.2.21
+ * Version:     2.2.22
  * Author:      True Market
  * Author URI:  https://truemarket.ca
  * License:     GPL-2.0-or-later
@@ -64,7 +64,8 @@
  *     delivery regardless of whether anyone actually read the email.
  *
  * ALERTING
- *   - When SMS alerts are enabled in Settings, every failure is texted (via
+ *   - When SMS alerts ("Delivery failure" on the General tab, saved as
+ *     sms_enabled) are enabled in Settings, every failure is texted (via
  *     Twilio) to every configured phone number, independent of email — this is what survives a total email outage.
  *   - Flood protection: failures with the same recipient + reason as one
  *     alerted in the last hour are only counted; alert texts are capped at
@@ -80,9 +81,9 @@
  *   - UNOPENED SWEEP (on whenever open tracking above is enabled; no
  *     separate switch): an hourly cron (wpel_check_unopened) flags any 'delivered' row
  *     that still has open_count = 0 past a configurable number of hours, and
- *     flags each row once, in one summary alert per run, sent by text with
- *     SMS alerts on, otherwise by email (see check_unopened() in
- *     includes/class-wpel-monitor.php). An optional secondary notice alerts
+ *     flags each row once, in one summary alert per run, sent by email and by
+ *     text to the alert phone numbers, whether or not SMS alerts are on (see
+ *     check_unopened() in includes/class-wpel-monitor.php). An optional secondary notice alerts
  *     again for rows still unopened past a second, later threshold. It only covers
  *     the sources ticked under "Watched emails", e.g. one Forminator notification
  *     or HTML Forms email action: every row records what sent it (see
@@ -108,7 +109,7 @@
  *     without affecting other sites).
  *   - Set the default From name/email (must be on a domain verified in Mailgun).
  *   - On the General tab, set the alert email recipient and/or the alert
- *     phone number(s) with "Enable SMS alerts" ticked, then fill in the
+ *     phone number(s) with "Delivery failure" ticked, then fill in the
  *     Twilio credentials on the Alerting & Logging tab.
  *   - In the Mailgun dashboard (Send -> Webhooks -> Add webhook ->
  *     Domain-level, pick this site's domain), add a webhook pointing at:
@@ -130,7 +131,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPEL_VERSION', '2.2.21' );
+define( 'WPEL_VERSION', '2.2.22' );
 define( 'WPEL_OPTION', 'wpel_settings' );
 define( 'WPEL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPEL_FILE', __FILE__ );

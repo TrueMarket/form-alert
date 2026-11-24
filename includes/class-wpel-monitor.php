@@ -48,6 +48,21 @@ class WPEL_Mailgun_Monitor {
 	const DUPLICATE_WINDOW = 120;
 
 	/**
+	 * How far along its life each status is, so a late event can't move a row
+	 * back (see advance_status()). Equal stages may replace each other: a
+	 * message to several recipients can be delivered to one and fail for
+	 * another, and the last event wins, as before.
+	 */
+	const STATUS_STAGES = array(
+		'pending'    => 0,
+		'sent'       => 1,
+		'temp-fail'  => 2,
+		'delivered'  => 3,
+		'failed'     => 3,
+		'complained' => 4,
+	);
+
+	/**
 	 * Row id created in the wp_mail filter, consumed by WPEL_Mailer's pre_wp_mail
 	 * hook. The two fire in sequence within a single wp_mail() call ('wp_mail'
 	 * filter, then 'pre_wp_mail' filter), so this hands the just-created row to
@@ -314,11 +329,13 @@ class WPEL_Mailgun_Monitor {
 	 * @param string $message_id
 	 */
 	public function mark_sent( $row_id, $message_id ) {
-		$fields = array( 'status' => 'sent' );
+		$fields = array();
 		if ( $message_id ) {
 			$fields['mailgun_message_id'] = $this->normalize_message_id( $message_id );
 		}
 		$this->update_row( $row_id, $fields, 'mailgun_api: accepted' );
+		// A fast delivery's webhook can beat this here, matched by recipient + subject.
+		$this->advance_status( $row_id, 'sent' );
 	}
 
 	/**
@@ -571,7 +588,10 @@ class WPEL_Mailgun_Monitor {
 		}
 
 		if ( $row_id && $this->row_exists( $row_id ) ) {
+			// Logged in the timeline either way, but the status only moves forward.
+			unset( $fields['status'] );
 			$this->update_row( $row_id, $fields, $type . ( $severity ? ':' . $severity : '' ) );
+			$this->advance_status( $row_id, $status );
 		} else {
 			$fields['recipient'] = $recipient;
 			$fields['subject']   = $subject;
@@ -847,12 +867,13 @@ class WPEL_Mailgun_Monitor {
 	}
 
 	/**
-	 * Whether SMS alerts are switched on in Settings: failure and outage
-	 * texts, and unopened alerts by text instead of email (see
-	 * unopened_channel()). Submission texts have their own switch, see
-	 * submission_texts_enabled(). Installs saved before the toggle existed
-	 * have no sms_enabled key; they count as enabled if they already had
-	 * alert phone numbers, so upgrading doesn't silently stop their texts.
+	 * Whether SMS alerts ("Delivery failure" on the General tab) are switched
+	 * on in Settings: failure and outage texts only. Submission texts have
+	 * their own switch, see submission_texts_enabled(), and unopened alerts
+	 * text whenever numbers are saved, see notify_unopened(). Installs saved
+	 * before the toggle existed have no sms_enabled key; they count as
+	 * enabled if they already had alert phone numbers, so upgrading doesn't
+	 * silently stop their texts.
 	 */
 	public function sms_enabled( $o = null ) {
 		$o = $this->settings( $o );
@@ -910,6 +931,7 @@ class WPEL_Mailgun_Monitor {
 	 *
 	 * Callers check that their kind of text is turned on first: SMS alerts
 	 * (sms_enabled()) or submission texts (submission_texts_enabled()).
+	 * Unopened alerts have no switch of their own beyond open tracking.
 	 *
 	 * @param string $body
 	 * @param bool   $bypass_limit Send even past the hourly limit (still counted).
@@ -1016,7 +1038,7 @@ class WPEL_Mailgun_Monitor {
 	 *         numbers saved).
 	 */
 	public function send_test_sms( $body ) {
-		// Works with SMS alerts off too: the numbers also get submission texts.
+		// Works with SMS alerts off too: the numbers also get submission texts and unopened alerts.
 		$creds = $this->get_twilio_credentials();
 		if ( ! $creds['account_sid'] || ! $creds['sid'] || ! $creds['auth_token'] || ! $creds['from_number'] ) {
 			return array(
@@ -1301,26 +1323,16 @@ class WPEL_Mailgun_Monitor {
 	}
 
 	/**
-	 * Whether check_unopened() runs: whenever open tracking is on, since
-	 * there's always a channel that can deliver (see unopened_channel()).
+	 * Whether check_unopened() runs: whenever open tracking is on, since the
+	 * email always has somewhere to go (notify_email() falls back to the
+	 * admin email). Older versions let the admin pick a channel, saved as
+	 * unopened_channel; that setting is no longer read.
 	 *
 	 * @param array|null $o Settings to check; null for the saved ones.
 	 */
 	public function unopened_alerts_enabled( $o = null ) {
 		$o = $this->settings( $o );
 		return ! empty( $o['track_opens'] );
-	}
-
-	/**
-	 * How unopened alerts are sent: 'sms' with SMS alerts on, otherwise
-	 * 'email' (notify_email() falls back to the admin email, so it always
-	 * has somewhere to go). Older versions let the admin pick, saved as
-	 * unopened_channel; that setting is no longer read.
-	 *
-	 * @param array|null $o Settings to check; null for the saved ones.
-	 */
-	public function unopened_channel( $o = null ) {
-		return $this->sms_enabled( $o ) ? 'sms' : 'email';
 	}
 
 	/**
@@ -1360,8 +1372,11 @@ class WPEL_Mailgun_Monitor {
 
 	/**
 	 * Alerts for everything a check_unopened() pass flagged, one per form
-	 * (source + page), naming who each went to and who submitted it. Sent as
-	 * a text or an email, per unopened_channel().
+	 * (source + page), naming who each went to and who submitted it. Sent by
+	 * email (the alert email, else the admin email) and by text to the alert
+	 * phone numbers when any are saved. Neither depends on SMS alerts
+	 * (sms_enabled()) or submission texts; up to 2.2.21 these went by text
+	 * with SMS alerts on, otherwise by email.
 	 *
 	 * @param object[] $rows
 	 * @param int      $hours
@@ -1396,19 +1411,18 @@ class WPEL_Mailgun_Monitor {
 			// Slack — disabled for now, see notify_slack() and the note in handle_failure().
 			// $this->notify_slack( $text );
 
-			if ( 'sms' === $this->unopened_channel() ) {
-				$this->notify_twilio( $text );
-			} else {
-				$this->notify_email(
-					sprintf(
-						'[Form Alert] %s%s on %s',
-						1 === $count ? 'Unopened email' : $count . ' unopened emails',
-						$tag,
-						$host
-					),
-					$text . "\n\nReview: " . $link
-				);
-			}
+			// Both channels, whatever else is ticked: notify_twilio() skips the
+			// text when no numbers are saved or Twilio isn't set up.
+			$this->notify_twilio( $text );
+			$this->notify_email(
+				sprintf(
+					'[Form Alert] %s%s on %s',
+					1 === $count ? 'Unopened email' : $count . ' unopened emails',
+					$tag,
+					$host
+				),
+				$text . "\n\nReview: " . $link
+			);
 		}
 	}
 
@@ -1506,6 +1520,41 @@ class WPEL_Mailgun_Monitor {
 		}
 
 		$wpdb->update( self::table(), $fields, array( 'id' => $id ) );
+	}
+
+	/**
+	 * Sets a row's status unless it has already moved past it. Mailgun doesn't
+	 * send webhooks in any guaranteed order, and 'accepted' and 'delivered'
+	 * usually fire within a second of each other (or 'accepted' is retried
+	 * later), so 'accepted' can land after 'delivered'. Letting it through
+	 * left the row at 'sent' for good, which also kept it out of the
+	 * unopened check (only 'delivered' rows count) and could hide a failure.
+	 * One conditional UPDATE, so two webhooks handled at once can't both pass
+	 * a separate check. Statuses outside STATUS_STAGES are set as they come.
+	 *
+	 * @param int    $id
+	 * @param string $status
+	 */
+	private function advance_status( $id, $status ) {
+		global $wpdb;
+		$later = array();
+		if ( isset( self::STATUS_STAGES[ $status ] ) ) {
+			foreach ( self::STATUS_STAGES as $other => $stage ) {
+				if ( $stage > self::STATUS_STAGES[ $status ] ) {
+					$later[] = $other;
+				}
+			}
+		}
+		if ( ! $later ) {
+			$wpdb->update( self::table(), array( 'status' => $status ), array( 'id' => $id ) );
+			return;
+		}
+		$wpdb->query(
+			$wpdb->prepare(
+				'UPDATE ' . self::table() . ' SET status = %s WHERE id = %d AND status NOT IN (' . implode( ', ', array_fill( 0, count( $later ), '%s' ) ) . ')',
+				array_merge( array( $status, $id ), $later )
+			)
+		);
 	}
 
 	/**

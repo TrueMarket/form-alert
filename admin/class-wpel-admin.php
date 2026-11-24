@@ -56,6 +56,16 @@ class WPEL_Admin {
 		'zoho.com',
 	);
 
+	/**
+	 * Subject prefix of Wordfence's alert emails (wordfence::alert()), which
+	 * the Email Log can hide: one per lockout or block, so a brute-force run
+	 * against the login or xmlrpc.php can bury everything else.
+	 */
+	const WORDFENCE_SUBJECT = '[Wordfence Alert]';
+
+	/** User meta: whether the Email Log hides Wordfence alerts for this user. */
+	const HIDE_WORDFENCE_META = 'wpel_hide_wordfence';
+
 	public static function instance() {
 		if ( ! self::$instance ) {
 			self::$instance = new self();
@@ -765,14 +775,14 @@ class WPEL_Admin {
 				<?php // Client-facing: everyday settings in plain language. The technical setup lives on the other two tabs. ?>
 				<div id="wpel-tab-general" class="wpel-tab-panel">
 					<div class="wpel-intro">
-						<p><strong>Form Alert makes sure the emails your website sends, like contact form messages, actually arrive.</strong> It keeps track of every email and lets you know right away when something goes wrong, so no enquiry slips through the cracks.</p>
+						<p><strong>Sales teams are 60x more likely to qualify a lead if they respond within one hour compared to waiting 24 hours.</strong> Form Alert is designed to help you improve response times and keep your leads from slipping through the cracks.</p>
 						<ul>
-							<li>Every email is recorded in the <a href="<?php echo esc_url( admin_url( 'admin.php?page=wpel-log' ) ); ?>">Log</a>, showing whether it was delivered and, with Track opens on, whether it was opened.</li>
-							<li>If an email can't be delivered, you get an alert by email, and by text with SMS alerts on.</li>
-							<li>If your website stops sending email altogether, a text lets you know, even though email can't get through.</li>
-							<li>Get an alert if a watched form's email still hasn't been opened after a set number of hours.</li>
-							<li>Optionally, get a text the moment someone submits one of your watched forms.</li>
+							<li>Every submission is recorded in the <a href="<?php echo esc_url( admin_url( 'admin.php?page=wpel-log' ) ); ?>">Log</a>, showing whether it was delivered.</li>
+							<li>With "Submission texts" on, your team can get a text notification the moment a form is submitted (shortening your response time).</li>
+							<li>With "Track opens," your team can be notified when a form submission may have been missed (eliminate "oops, that was in my spam folder").</li>
+							<li>With "Delivery failure" on, if an email can't be delivered, your team will get a text alert (find out when forms aren't working).</li>
 						</ul>
+						<p><strong>Form Alert is a True Market product.</strong> Have questions or new ideas? Visit <a href="https://truemarket.ca" target="_blank">truemarket.ca</a></p>
 					</div>
 
 					<table class="form-table" role="presentation">
@@ -810,27 +820,29 @@ class WPEL_Admin {
 							<p class="description">Use the number of someone who replies to new form submissions, such as a member of your sales team, so they hear right away when an enquiry needs attention. Separate several numbers with commas. Save your changes before sending a test.</p></td>
 						</tr>
 						<tr>
-							<th scope="row">SMS alerts</th>
-							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[sms_enabled]" id="wpel_sms_enabled" value="1" <?php checked( $sms_enabled ); ?>> Enable SMS alerts</label>
-							<p class="description">Get a text when one of your website's emails can't be delivered, or when the site stops sending email altogether, so you still find out even when alert emails can't get through.</p></td>
-						</tr>
-						<tr>
 							<th scope="row">Submission texts</th>
-							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[submission_texts]" id="wpel_submission_texts" value="1" <?php checked( $submission_texts ); ?>> Text me as soon as a watched email is sent</label>
-							<p class="description">For a form, that's the moment someone submits it, so a new enquiry is seen right away. Leave this off to only hear about watched emails that go unopened.</p></td>
+							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[submission_texts]" id="wpel_submission_texts" value="1" <?php checked( $submission_texts ); ?>> Text me as soon as a form is submitted</label>
+							<p class="description">When a form is submitted your team can receive instant notifications via text message. Contacting a lead within the first hour increases your odds of success by over 7x.</p></td>
 						</tr>
 						<tr>
 							<th scope="row">Track opens</th>
-							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[track_opens]" id="wpel_track_opens" value="1" <?php checked( $track_opens ); ?>> Track when emails are opened</label>
+							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[track_opens]" id="wpel_track_opens" value="1" <?php checked( $track_opens ); ?>> Alert me when form submissions are read</label>
 							<p class="description">Shows in the Log whether each email was opened. Treat it as a good hint, not a guarantee: some email apps open emails automatically.</p>
 							<div class="wpel-unopened-row"<?php echo $track_opens ? '' : ' style="display:none"'; ?>>
-								<p><label for="wpel_unopened_hours">Alert me if a watched email isn't opened within</label>
+								<p><label for="wpel_unopened_hours">Alert me if a form submission email isn't opened within</label>
 								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_hours]" id="wpel_unopened_hours" type="number" min="1" value="<?php echo esc_attr( isset( $o['unopened_hours'] ) ? $o['unopened_hours'] : 24 ); ?>" style="width:70px"> hours</p>
 								<?php // The second threshold counts from sending too; sanitize_settings() keeps it above the first. ?>
 								<p><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_second]" value="1" <?php checked( $unopened_second ); ?>> Alert again if it's still unopened after</label>
 								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_second_hours]" type="number" min="2" aria-label="Hours before alerting again" value="<?php echo esc_attr( isset( $o['unopened_second_hours'] ) ? $o['unopened_second_hours'] : 48 ); ?>" style="width:70px"> hours</p>
-								<p class="description">Sent by text if SMS alerts are on, otherwise by email to the alert email recipient. Only covers emails sent after open tracking was turned on.</p>
+								<?php // Always both channels, see WPEL_Mailgun_Monitor::notify_unopened(). ?>
+								<p class="description">Sent by SMS and email (to the alert email).</p>
 							</div></td>
+						</tr>
+						<?php // Stored as sms_enabled: failure and outage texts only (see WPEL_Mailgun_Monitor::sms_enabled()). ?>
+						<tr>
+							<th scope="row">Delivery failure</th>
+							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[sms_enabled]" id="wpel_sms_enabled" value="1" <?php checked( $sms_enabled ); ?>> Text me when the forms fail to send an email</label>
+							<p class="description">Get a text when one of your website's emails can't be delivered, or when the site stops sending email altogether, so you still find out even when alert emails can't get through.</p></td>
 						</tr>
 						<?php // Only does anything with Track opens or submission texts on, so only shown while either is. ?>
 						<tr class="wpel-watch-row"<?php echo ( $track_opens || $submission_texts ) ? '' : ' style="display:none"'; ?>>
@@ -1411,12 +1423,16 @@ class WPEL_Admin {
 		$has_test_email  = ! empty( $status['test_email_sent'] );
 
 		// SMS only counts toward the alerts step once it can actually send.
-		// Submission texts don't count (they aren't failure alerts), but the
-		// missing-setup note still covers them.
+		// Submission texts and unopened alerts don't count (they aren't failure
+		// alerts), but the missing-setup note still covers them. Unopened
+		// alerts text whenever numbers are saved and also go by email, so for
+		// them only numbers without Twilio settings is incomplete.
 		$monitor         = WPEL_Mailgun_Monitor::instance();
 		$sms_enabled     = $monitor->sms_enabled();
-		$sms_incomplete  = ( $sms_enabled || $monitor->submission_texts_enabled() )
-			&& ( empty( $o['twilio_to_numbers'] ) || in_array( '', $monitor->get_twilio_credentials(), true ) );
+		$has_numbers     = ! empty( $o['twilio_to_numbers'] );
+		$twilio_missing  = in_array( '', $monitor->get_twilio_credentials(), true );
+		$sms_incomplete  = ( ( $sms_enabled || $monitor->submission_texts_enabled() ) && ( ! $has_numbers || $twilio_missing ) )
+			|| ( $monitor->unopened_alerts_enabled() && $has_numbers && $twilio_missing );
 		$has_alerts      = ! empty( $o['alert_email'] ) || ( $sms_enabled && ! $sms_incomplete );
 
 		// Shared credentials (see wpel_shared_credential()).
@@ -1491,9 +1507,9 @@ class WPEL_Admin {
 							<br><em>Confirmed automatically by <strong>Check Mailgun config</strong> above once it's set up correctly.</em>
 						</li>
 						<li><?php echo $has_alerts ? $done : $todo; // phpcs:ignore WordPress.Security.EscapeOutput ?>
-							Set an alert email and/or enable SMS alerts on the <strong>General</strong> tab (Twilio settings are on the <strong>Alerting &amp; Logging</strong> tab).
+							Set an alert email and/or turn on Delivery failure texts on the <strong>General</strong> tab (Twilio settings are on the <strong>Alerting &amp; Logging</strong> tab).
 							<?php if ( $sms_incomplete ) : ?>
-								<br><em>SMS alerts or submission texts are on, but the Twilio settings or alert phone numbers aren't filled in yet, so no texts will be sent.</em>
+								<br><em>Texts are turned on, but the Twilio settings or alert phone numbers aren't filled in yet, so no texts will be sent.</em>
 							<?php endif; ?>
 						</li>
 						<li><?php echo $has_test_email ? $done : $todo; // phpcs:ignore WordPress.Security.EscapeOutput ?> Click <strong>Send test email</strong> on the General tab to confirm the whole pipeline end to end.</li>
@@ -1645,9 +1661,12 @@ class WPEL_Admin {
 		exit;
 	}
 
-	/** Strips the bulk-action result args from the URL once the notice has shown. */
+	/**
+	 * Strips the bulk-action result args from the URL once the notice has
+	 * shown, and hide_wordfence once the Email Log has saved it.
+	 */
 	public function removable_query_args( $args ) {
-		return array_merge( $args, array( 'wpel_bulk', 'wpel_done', 'wpel_skipped', 'wpel_failed' ) );
+		return array_merge( $args, array( 'wpel_bulk', 'wpel_done', 'wpel_skipped', 'wpel_failed', 'hide_wordfence' ) );
 	}
 
 	/** Brand logo shown above the page title on the plugin's admin screens. */
@@ -1724,11 +1743,28 @@ class WPEL_Admin {
 		$sources = WPEL_Sources::instance();
 		$monitor = WPEL_Mailgun_Monitor::instance();
 
-		// The source filter and search narrow every status tab (and their
-		// counts); the status tabs themselves stay exclusive. 'opened' is a
-		// pseudo-status: a single exclusive tab like the others (not a
-		// combinable toggle), so every link in the row replaces the status
-		// view wholesale.
+		// Hiding Wordfence alerts is a per-user view preference, so it sticks
+		// across visits and every link on the page keeps it without carrying
+		// it along. The filter form sends a 0 ahead of the checkbox, so
+		// unticking it is saved too. Hidden rows are still logged, and still
+		// alerted on if they fail.
+		$user_id = get_current_user_id();
+		if ( isset( $_GET['hide_wordfence'] ) ) {
+			$hide_wf = '1' === sanitize_key( wp_unslash( $_GET['hide_wordfence'] ) );
+			if ( $hide_wf ) {
+				update_user_meta( $user_id, self::HIDE_WORDFENCE_META, 1 );
+			} else {
+				delete_user_meta( $user_id, self::HIDE_WORDFENCE_META );
+			}
+		} else {
+			$hide_wf = (bool) get_user_meta( $user_id, self::HIDE_WORDFENCE_META, true );
+		}
+
+		// The source filter, search and Wordfence toggle narrow every status
+		// tab (and their counts); the status tabs themselves stay exclusive.
+		// 'opened' is a pseudo-status: a single exclusive tab like the others
+		// (not a combinable toggle), so every link in the row replaces the
+		// status view wholesale.
 		$conditions = array();
 		if ( '' !== $source ) {
 			$conditions[] = $wpdb->prepare( 'source = %s', $source );
@@ -1737,6 +1773,17 @@ class WPEL_Admin {
 			$like         = '%' . $wpdb->esc_like( $search ) . '%';
 			// headers covers the visitor's address shown in the From column (see WPEL_Mailgun_Monitor::submitter()).
 			$conditions[] = $wpdb->prepare( '(recipient LIKE %s OR subject LIKE %s OR from_address LIKE %s OR headers LIKE %s OR mailgun_message_id LIKE %s)', $like, $like, $like, $like, $like );
+		}
+
+		// Counted before the toggle applies, so the checkbox can say how many
+		// it hides (and only shows when there's something to hide).
+		$wf_like  = $wpdb->esc_like( self::WORDFENCE_SUBJECT ) . '%';
+		$wf_count = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM {$table} WHERE " . implode( ' AND ', array_merge( $conditions, array( $wpdb->prepare( 'subject LIKE %s', $wf_like ) ) ) )
+		);
+		if ( $hide_wf ) {
+			// subject is nullable, and NOT LIKE on NULL would drop the row too.
+			$conditions[] = $wpdb->prepare( '(subject IS NULL OR subject NOT LIKE %s)', $wf_like );
 		}
 		$by_source = $conditions ? ' WHERE ' . implode( ' AND ', $conditions ) : '';
 
@@ -1818,6 +1865,13 @@ class WPEL_Admin {
 					</select>
 					<button type="submit" class="button" form="wpel-log-filter">Filter</button>
 				</div>
+				<?php if ( $wf_count || $hide_wf ) : ?>
+					<div class="alignleft actions" style="line-height:30px">
+						<?php // The 0 comes first, so the checkbox's 1 overrides it when ticked (see the top of this method). ?>
+						<input type="hidden" name="hide_wordfence" value="0" form="wpel-log-filter">
+						<label><input type="checkbox" name="hide_wordfence" id="wpel-hide-wordfence" value="1" form="wpel-log-filter" <?php checked( $hide_wf ); ?>> Hide Wordfence alerts (<?php echo (int) $wf_count; ?>)</label>
+					</div>
+				<?php endif; ?>
 				<div class="alignright actions" style="padding-right:0">
 					<label class="screen-reader-text" for="wpel-log-search">Search emails:</label>
 					<input type="search" id="wpel-log-search" name="s" form="wpel-log-filter" style="width:280px" value="<?php echo esc_attr( $search ); ?>" placeholder="Recipient, subject, sender…">
@@ -1845,7 +1899,7 @@ class WPEL_Admin {
 				</thead>
 				<tbody>
 				<?php if ( empty( $rows ) ) : ?>
-					<tr><td colspan="10">No entries.</td></tr>
+					<tr><td colspan="10">No entries.<?php echo ( $hide_wf && $wf_count ) ? ' ' . esc_html( sprintf( _n( '%d Wordfence alert is hidden.', '%d Wordfence alerts are hidden.', $wf_count, 'wpel' ), $wf_count ) ) : ''; ?></td></tr>
 				<?php else : ?>
 					<?php foreach ( $rows as $r ) :
 						$badge = array(
@@ -1996,6 +2050,15 @@ class WPEL_Admin {
 			.wp-core-ui .wpel-row-actions .wpel-delete:hover, .wp-core-ui .wpel-row-actions .wpel-delete:focus { color: #fff; background: #b32d2e; border-color: #b32d2e; }
 		</style>
 		<script>
+		( function () {
+			// Applies as soon as it's ticked, like a view toggle, rather than waiting for Filter.
+			var hideWf = document.getElementById( 'wpel-hide-wordfence' );
+			if ( hideWf && hideWf.form ) {
+				hideWf.addEventListener( 'change', function () {
+					hideWf.form.submit();
+				} );
+			}
+		} )();
 		( function () {
 			var form = document.getElementById( 'wpel-log-form' );
 			if ( ! form ) {

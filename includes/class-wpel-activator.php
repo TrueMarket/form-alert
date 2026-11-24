@@ -92,8 +92,8 @@ class WPEL_Activator {
 
 	/**
 	 * Unopened alerts used to have a "Send by" choice (unopened_channel);
-	 * they now go by text with SMS alerts on, otherwise by email, so they run
-	 * whenever open tracking is on. A site that had "Text message" picked
+	 * they now always go by email, plus text when alert phone numbers are
+	 * saved, so they run whenever open tracking is on. A site that had "Text message" picked
 	 * with SMS off wasn't running the check at all: skip the emails already
 	 * in the log there, so the first run doesn't alert about every old
 	 * unopened email at once.
@@ -113,7 +113,7 @@ class WPEL_Activator {
 
 	/**
 	 * Unopened alerts used to have their own checkbox (alert_unopened); they
-	 * now just follow SMS alerts + open tracking. On a site that had the
+	 * now just follow open tracking. On a site that had the
 	 * checkbox off, skip the emails already in the log, so the first run
 	 * after updating doesn't text about every old unopened email at once.
 	 */
@@ -180,8 +180,8 @@ class WPEL_Activator {
 			'alert_temp_fail'  => 0,
 			'outage_threshold' => 5,
 			'outage_window'    => 15, // minutes
-			// Unopened alerts run whenever track_opens is on, by text with
-			// SMS alerts on, otherwise by email.
+			// Unopened alerts run whenever track_opens is on, by email and by
+			// text to the alert phone numbers (whether or not sms_enabled is).
 			'unopened_hours'   => 24,
 			// Second text for emails still unopened unopened_second_hours
 			// after sending (always later than unopened_hours).
