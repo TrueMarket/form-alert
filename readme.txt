@@ -2,7 +2,7 @@
 Contributors: jimlaroche
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Stable tag: 2.2.22
+Stable tag: 2.2.23
 
 Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, reconciles delivery via Mailgun webhooks, and alerts on failure.
 
@@ -11,6 +11,13 @@ Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, re
 Form Alert replaces WP Mail SMTP (or any other SMTP plugin) as the mail transport, sending directly through Mailgun's HTTP API. Every send is logged and reconciled against Mailgun's webhook events (delivered vs. bounced vs. complained), and failures trigger alerts by email and SMS (Twilio). Sites without their own Mailgun domain yet send through a shared Mailgun SMTP fallback, with no delivery or open tracking. See README.md in the plugin folder for full setup and configuration details.
 
 == Changelog ==
+
+= 2.2.23 =
+* Added a Webhook signing key field to the Sending tab, masked once saved
+* Changed the signing key lookup so a key saved in Settings won over WPEL_MAILGUN_SIGNING_KEY, with the wp-config.php constant only used while the field was blank, the same way the Twilio credentials worked
+* Replaced the setup checklist's "Missing from wp-config.php" snippet with a Webhook signing key missing warning that explained what broke without it and pointed to the Sending tab
+* Updated the simulate-webhook tool's missing-key error to point to the Sending tab
+* Documented the above in README.md
 
 = 2.2.22 =
 * Added a Hide Wordfence alerts checkbox to the Email Log, which hid emails whose subject started with [Wordfence Alert], showed how many it hid, applied as soon as it was ticked and was remembered for each user

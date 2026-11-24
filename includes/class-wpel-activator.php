@@ -146,8 +146,8 @@ class WPEL_Activator {
 		// Seed default settings if empty.
 		$defaults = array(
 			// Mailgun API sending (replaces WP Mail SMTP / any other SMTP plugin).
-			// The webhook signing key comes from wp-config.php instead — see
-			// wpel_shared_credential().
+			// The webhook signing key isn't seeded: it's entered on the Sending
+			// tab or defined in wp-config.php — see wpel_shared_credential().
 			'sending_enabled'  => 1,
 			'api_key'          => '',
 			'domain'           => '',

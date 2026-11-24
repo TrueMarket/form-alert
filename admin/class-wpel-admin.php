@@ -125,13 +125,9 @@ class WPEL_Admin {
 		$out['twilio_auth_token']  = $this->sanitize_secret( $input, $previous, 'twilio_auth_token' );
 		$out['twilio_from_number'] = $this->sanitize_twilio_from_number( isset( $input['twilio_from_number'] ) ? $input['twilio_from_number'] : '' );
 		$out['twilio_to_numbers']  = $this->sanitize_phone_list( isset( $input['twilio_to_numbers'] ) ? $input['twilio_to_numbers'] : '' );
-		// The webhook signing key now comes from wp-config.php and has no field
-		// here. Carry over any value an older version saved, so
-		// wpel_shared_credential() can still fall back to it on sites that
-		// haven't added the constant yet.
-		if ( ! empty( $previous['signing_key'] ) ) {
-			$out['signing_key'] = $previous['signing_key'];
-		}
+		// Webhook signing key (Sending tab). While it's blank, a
+		// WPEL_MAILGUN_SIGNING_KEY constant is used — see wpel_shared_credential().
+		$out['signing_key']      = $this->sanitize_secret( $input, $previous, 'signing_key' );
 		$out['alert_temp_fail']  = 0;
 		$out['retention_days']   = max( 0, (int) ( isset( $input['retention_days'] ) ? $input['retention_days'] : 30 ) );
 		$out['outage_threshold'] = max( 1, (int) ( isset( $input['outage_threshold'] ) ? $input['outage_threshold'] : 5 ) );
@@ -875,6 +871,11 @@ class WPEL_Admin {
 							<p class="description">e.g. <code>mg.example.com</code>. Create one <a href="https://app.mailgun.com/mg/sending/new-domain" target="_blank">here</a>.</p></td>
 						</tr>
 						<tr>
+							<th scope="row"><label for="wpel_signing_key">Webhook signing key</label></th>
+							<td><input name="<?php echo esc_attr( WPEL_OPTION ); ?>[signing_key]" id="wpel_signing_key" type="password" class="regular-text" autocomplete="new-password" value="<?php echo ! empty( $o['signing_key'] ) ? esc_attr( self::SAVED_SECRET_MASK ) : ''; ?>">
+							<p class="description">Mailgun's <strong>HTTP webhook signing key</strong>, found <a href="https://app.mailgun.com/settings/api_security" target="_blank">here</a>. It's the same for every domain on the Mailgun account. Without it, Mailgun's webhooks are rejected, so emails stay at Sent and opens aren't recorded.</p></td>
+						</tr>
+						<tr>
 							<th scope="row"><label for="wpel_from_name">From name</label></th>
 							<td><input name="<?php echo esc_attr( WPEL_OPTION ); ?>[from_name]" id="wpel_from_name" type="text" class="regular-text" placeholder="<?php echo esc_attr( wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) ); ?>" value="<?php echo esc_attr( isset( $o['from_name'] ) ? $o['from_name'] : '' ); ?>">
 							<p class="description">Leave blank to use the Site Title.</p>
@@ -1411,8 +1412,8 @@ class WPEL_Admin {
 	 * time this plugin lands on a new site, with live checkmarks for whatever
 	 * can be verified from saved settings, plus two steps (webhook
 	 * registration, a successful test send) confirmed via get_setup_status()
-	 * since they can only be proven by actually doing them. Shared
-	 * wp-config.php credentials only show up here when one is missing.
+	 * since they can only be proven by actually doing them. The webhook
+	 * signing key only shows up here when it's missing.
 	 */
 	private function render_setup_checklist( $o ) {
 		$status          = $this->get_setup_status();
@@ -1435,18 +1436,10 @@ class WPEL_Admin {
 			|| ( $monitor->unopened_alerts_enabled() && $has_numbers && $twilio_missing );
 		$has_alerts      = ! empty( $o['alert_email'] ) || ( $sms_enabled && ! $sms_incomplete );
 
-		// Shared credentials (see wpel_shared_credential()).
-		$required = array(
-			'WPEL_MAILGUN_SIGNING_KEY' => array( 'signing_key', 'Mailgun HTTP webhook signing key' ),
-		);
-		$missing = array();
-		foreach ( $required as $constant => $info ) {
-			if ( ! wpel_shared_credential( $constant, $info[0] ) ) {
-				$missing[ $constant ] = $info[1];
-			}
-		}
+		// Sending tab, else wp-config.php (see wpel_shared_credential()).
+		$missing_signing = ! wpel_shared_credential( 'WPEL_MAILGUN_SIGNING_KEY', 'signing_key' );
 
-		$all_done        = ! $missing && $has_domain && $has_api_key && $has_from_email
+		$all_done        = ! $missing_signing && $has_domain && $has_api_key && $has_from_email
 			&& $has_webhook && $has_alerts && $has_test_email;
 		$done            = '&#9989;';
 		$todo            = '&#11036;';
@@ -1467,15 +1460,10 @@ class WPEL_Admin {
 						<strong><?php echo esc_html( $transport_note[2] ); ?></strong>
 						<p class="description" style="margin:4px 0 0;"><?php echo esc_html( $transport_note[3] ); ?></p>
 					</div>
-					<?php if ( $missing ) : ?>
+					<?php if ( $missing_signing ) : ?>
 						<div style="border-left:3px solid #d63638;background:#fcf0f1;padding:8px;margin:8px 0 12px;">
-							<strong>Missing from wp-config.php</strong>
-							<p class="description" style="margin:4px 0;">These are shared by every site, so they aren't in Settings. Add them to <code>wp-config.php</code>:</p>
-							<code style="display:block;white-space:pre-wrap;word-break:break-all;font-size:11px;"><?php
-							foreach ( $missing as $constant => $hint ) {
-								echo esc_html( "define( '{$constant}', '{$hint}' );" ) . "\n";
-							}
-							?></code>
+							<strong>Webhook signing key missing</strong>
+							<p class="description" style="margin:4px 0 0;">Mailgun's webhooks are rejected without it, so emails stay at Sent, opens aren't recorded and bounces don't alert. Enter it as <strong>Webhook signing key</strong> on the <strong>Sending</strong> tab.</p>
 						</div>
 					<?php endif; ?>
 					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:0 0 12px;">

@@ -8,10 +8,11 @@ Sends every outgoing WordPress email through the **Mailgun HTTP API** when API s
 1. Copy the `form-alert` folder into `wp-content/plugins/`.
 2. Activate **Form Alert** in **Plugins**. Activation creates or upgrades the log table and schedules daily log pruning and an hourly unopened-email check.
 3. Deactivate WP Mail SMTP (or any other SMTP plugin) to avoid transport conflicts. Form Alert sends through the API when configured; its SMTP fallback uses WordPress's PHPMailer when the API isn't handling a send.
-4. Add the webhook signing key to `wp-config.php` — see [Shared credentials (wp-config.php)](#shared-credentials-wp-configphp). It's the same on every site, so it isn't in Settings.
+4. Get Mailgun's **HTTP webhook signing key** (Mailgun → *Settings → API Security*; it's the same for every domain on the account) and enter it as **Webhook signing key** on the Sending tab (next step). Without it, every Mailgun webhook is rejected. A `wp-config.php` constant can stand in for it — see [Shared credentials (wp-config.php)](#shared-credentials-wp-configphp).
 5. Go to **Form Alert → Settings** and fill in the following. There are three tabs: **General** (client-facing: a plain-language overview plus alert email, alert phone numbers, submission texts, Track opens with its unopened-email alerts, Delivery failure (SMS alerts), and the watched forms list; the setup checklist sidebar is hidden on this tab), **Sending** and **Alerting & Logging** (Twilio credentials, webhook details, retention, outage detection and other watched emails). The Sending tab's **SMTP fallback** section is normally already filled in on sites cloned from the boilerplate, so mail works before any of this is done.
    - **Mailgun API key** (Sending) — create a separate key for each site (Mailgun → *Settings → API Keys*) so one site's key can be revoked without affecting the others. Use a full API key, not a domain sending key.
    - **Mailgun sending domain** (Sending, US region only) — a dedicated one for this site
+   - **Webhook signing key** (Sending) — see step 4. Once saved it shows as a masked value; leave it as is to keep it, type over it to change it, or clear it to remove it.
    - **From name/email** (Sending; shared by the API and the SMTP fallback) — the email must be on this site's sending domain once it has one; entering the domain switches an SMTP-domain address over to `noreply@` that domain automatically. Leave the name blank to use the Site Title.
    - **Alert email recipient** (General) — falls back to the site's admin email when blank, for both real alerts and **Send test email**. A warning lists any Forminator or HTML Forms email that only goes to an alert address or its domain (big webmail domains like gmail.com only count on an exact match), since an alert about it bouncing would probably bounce too. **Dismiss warning** hides the form emails listed at the time; one that starts going there later shows the warning again.
    - **Texts** (optional) — tick **Delivery failure** (*Text me when the forms fail to send an email*: texts when an email can't be delivered or the site stops sending email; saved as `sms_enabled`) and/or **Submission texts** on the General tab, then fill in the fields below. Unopened-email alerts (with **Track opens** on) also text these numbers, whatever else is ticked:
@@ -97,14 +98,14 @@ Thresholds and retention are on the Settings page. Every logged email's message 
 
 ## Shared credentials (wp-config.php)
 
-Credentials that are the same on every site live only in `wp-config.php` and aren't shown in Settings. Copy the same block into each site's `wp-config.php`:
+The webhook signing key is normally entered as **Webhook signing key** on the Sending tab. While that field is blank, the plugin uses `WPEL_MAILGUN_SIGNING_KEY` from `wp-config.php` instead, the same way the Twilio constants below work:
 
 ```php
 define( 'WPEL_MAILGUN_SIGNING_KEY', 'account-level HTTP webhook signing key' );
 define( 'WPEL_SLACK_WEBHOOK', 'https://hooks.slack.com/services/...' ); // unused while Slack alerting is disabled
 ```
 
-The setup checklist on the Settings page lists the signing key if it's missing. Sites set up with an older version of this plugin may still have it saved in Settings. That saved value is used as a fallback until the constant is defined; the constant always wins once it's there.
+A key saved in Settings always wins over the constant. The setup checklist on the Settings page warns when neither is set: without a key every Mailgun webhook is rejected, so emails stay at Sent, opens aren't recorded and bounces don't alert.
 
 The Twilio credentials are entered in Settings (see the install steps above), not here. Sites that already define `WPEL_TWILIO_ACCOUNT_SID`, `WPEL_TWILIO_SID`, `WPEL_TWILIO_AUTH_TOKEN` or `WPEL_TWILIO_FROM_NUMBER` in `wp-config.php` keep working: each constant is used while its Settings field is blank, and a value saved in Settings wins over it. **Delivery failure** texts or submission texts still have to be turned on in Settings (unopened-email alerts text whenever alert phone numbers are saved), though sites upgraded with alert phone numbers already saved start out with Delivery failure texts enabled.
 

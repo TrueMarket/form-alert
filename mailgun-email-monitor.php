@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Form Alert
  * Description: Sends all outgoing email directly through the Mailgun HTTP API (no SMTP plugin required), logs every send, reconciles real delivery status via Mailgun webhooks, flags failures, and alerts by email + SMS (Twilio).
- * Version:     2.2.22
+ * Version:     2.2.23
  * Author:      True Market
  * Author URI:  https://truemarket.ca
  * License:     GPL-2.0-or-later
@@ -101,9 +101,9 @@
  *     in favor of Twilio SMS. Uncomment them to re-enable it alongside SMS.
  *
  * SETUP CHECKLIST (see the Settings page):
- *   - Define the shared credentials in wp-config.php (same on every site,
- *     not shown in Settings — see wpel_shared_credential()):
- *     WPEL_MAILGUN_SIGNING_KEY.
+ *   - Enter the Mailgun HTTP webhook signing key on the Sending tab
+ *     (WPEL_MAILGUN_SIGNING_KEY in wp-config.php is used while it's blank —
+ *     see wpel_shared_credential()).
  *   - Enter this site's Mailgun sending domain (US region only) and a
  *     Mailgun API key created just for this site (so it can be revoked
  *     without affecting other sites).
@@ -131,15 +131,16 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPEL_VERSION', '2.2.22' );
+define( 'WPEL_VERSION', '2.2.23' );
 define( 'WPEL_OPTION', 'wpel_settings' );
 define( 'WPEL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPEL_FILE', __FILE__ );
 
 /**
  * Credentials that are the same on every site (the Mailgun webhook signing
- * key) live only in wp-config.php and aren't shown in Settings. Falls back to a value saved in Settings by an older version of
- * this plugin, so existing sites keep working until the constant is added.
+ * key): the value saved in Settings (the Sending tab's Webhook signing key
+ * field), falling back to a wp-config.php constant while that's blank, the
+ * same way the Twilio credentials work.
  * The Mailgun API key is deliberately not one of these: each site gets its
  * own, saved in Settings, so it can be revoked on its own.
  *
@@ -148,11 +149,12 @@ define( 'WPEL_FILE', __FILE__ );
  * @return string
  */
 function wpel_shared_credential( $constant, $legacy_key ) {
-	if ( defined( $constant ) && constant( $constant ) ) {
-		return trim( (string) constant( $constant ) );
+	$o     = get_option( WPEL_OPTION, array() );
+	$value = isset( $o[ $legacy_key ] ) ? trim( (string) $o[ $legacy_key ] ) : '';
+	if ( '' === $value && defined( $constant ) ) {
+		$value = trim( (string) constant( $constant ) );
 	}
-	$o = get_option( WPEL_OPTION, array() );
-	return isset( $o[ $legacy_key ] ) ? trim( (string) $o[ $legacy_key ] ) : '';
+	return $value;
 }
 
 /**

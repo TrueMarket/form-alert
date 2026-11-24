@@ -2,8 +2,8 @@
 /**
  * Dev tool: simulates Mailgun webhook calls against this site and checks
  * the Email Log reacts correctly — no Mailgun account, DNS or public URL
- * needed. Every event is signed with WPEL_MAILGUN_SIGNING_KEY exactly the
- * way Mailgun signs them, so it exercises the real handle_webhook() path.
+ * needed. Every event is signed with the site's webhook signing key exactly
+ * the way Mailgun signs them, so it exercises the real handle_webhook() path.
  *
  * Run from the site shell (Local → right-click site → Open site shell):
  *
@@ -55,7 +55,7 @@ if ( $opts['url'] ) {
 
 $signing_key = wpel_shared_credential( 'WPEL_MAILGUN_SIGNING_KEY', 'signing_key' );
 if ( ! $signing_key ) {
-	WP_CLI::error( 'No webhook signing key found. Define WPEL_MAILGUN_SIGNING_KEY in wp-config.php (any string works for local testing).' );
+	WP_CLI::error( 'No webhook signing key found. Enter one as Webhook signing key on the Sending tab (any string works for local testing).' );
 }
 
 $table    = WPEL_Mailgun_Monitor::table();
