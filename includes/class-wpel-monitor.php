@@ -496,8 +496,12 @@ class WPEL_Mailgun_Monitor {
 		}
 
 		if ( ! $this->verify_signature( isset( $payload['signature'] ) ? $payload['signature'] : array() ) ) {
+			WPEL_Health_Report::mark( 'webhook_rejected' );
 			return new WP_REST_Response( array( 'error' => 'bad signature' ), 403 );
 		}
+		// Any verified event proves webhooks reach this site, including the
+		// ones ignored below.
+		WPEL_Health_Report::mark( 'webhook' );
 
 		$event = isset( $payload['event-data'] ) ? $payload['event-data'] : array();
 		$type  = isset( $event['event'] ) ? $event['event'] : '';
@@ -1241,6 +1245,8 @@ class WPEL_Mailgun_Monitor {
 	 * delivered email would look unopened.
 	 */
 	public function check_unopened() {
+		// For health reports: shows this cron event is still firing.
+		WPEL_Health_Report::mark( 'unopened_check', 0 );
 		if ( ! $this->unopened_alerts_enabled() ) {
 			return;
 		}

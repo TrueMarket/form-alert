@@ -9,7 +9,7 @@ Sends every outgoing WordPress email through the **Mailgun HTTP API** when API s
 2. Activate **Form Alert** in **Plugins**. Activation creates or upgrades the log table and schedules daily log pruning and an hourly unopened-email check.
 3. Deactivate WP Mail SMTP (or any other SMTP plugin) to avoid transport conflicts. Form Alert sends through the API when configured; its SMTP fallback uses WordPress's PHPMailer when the API isn't handling a send.
 4. Get Mailgun's **HTTP webhook signing key** (Mailgun → *Settings → API Security*; it's the same for every domain on the account) and enter it as **Webhook signing key** on the Sending tab (next step). Without it, every Mailgun webhook is rejected. A `wp-config.php` constant can stand in for it — see [Shared credentials (wp-config.php)](#shared-credentials-wp-configphp).
-5. Go to **Form Alert → Settings** and fill in the following. There are three tabs: **General** (client-facing: a plain-language overview plus alert email, alert phone numbers, submission texts, Track opens with its unopened-email alerts, Delivery failure (SMS alerts), and the watched forms list; the setup checklist sidebar is hidden on this tab), **Sending** and **Alerting & Logging** (Twilio credentials, webhook details, retention, outage detection and other watched emails). The Sending tab's **SMTP fallback** section is normally already filled in on sites cloned from the boilerplate, so mail works before any of this is done.
+5. Go to **Form Alert → Settings** and fill in the following. There are three tabs: **General** (client-facing: a plain-language overview plus alert email, alert phone numbers, submission texts, Track opens with its unopened-email alerts, Delivery failure (SMS alerts), and the watched forms list; the setup checklist sidebar is hidden on this tab), **Sending** and **Alerting & Logging** (Twilio credentials, webhook details, retention, outage detection, [health reports](#health-reports) and other watched emails). The Sending tab's **SMTP fallback** section is normally already filled in on sites cloned from the boilerplate, so mail works before any of this is done.
    - **Mailgun API key** (Sending) — create a separate key for each site (Mailgun → *Settings → API Keys*) so one site's key can be revoked without affecting the others. Use a full API key, not a domain sending key.
    - **Mailgun sending domain** (Sending, US region only) — a dedicated one for this site
    - **Webhook signing key** (Sending) — see step 4. Once saved it shows as a masked value; leave it as is to keep it, type over it to change it, or clear it to remove it.
@@ -96,6 +96,81 @@ The settings sidebar shows which one is active, and **Send test email** reports 
 
 Thresholds and retention are on the Settings page. Every logged email's message is saved and can be viewed from the Email Log (**View**), and is deleted with its log entry once the retention period passes. Tick entries in the Email Log to **Delete** them or **Resend** them via the Bulk actions menu; a resend goes out as a new log entry (without attachments, which aren't saved), and entries created only from Mailgun events have no message to resend.
 
+## Health reports
+
+The alerts above go to the client, and only fire when something fails loudly. Health reports cover the quiet failures, for the True Market team: once an hour, each site posts a summary of its email pipeline to a collector the team runs, which alerts the team when a site's numbers look wrong or it stops reporting. Examples:
+
+- Webhooks stop reaching the site. Emails stay at Sent, so bounces don't alert, and unopened alerts stop too, since they only cover delivered emails.
+- Opens stop being recorded, so every watched email looks unopened and the client gets false alerts.
+- The site drops to the SMTP fallback or WordPress's default transport.
+- The site, the plugin or WP-Cron stops running, so no report arrives at all.
+
+Set **Report URL** and **Report secret** under **Health reports** on the Alerting & Logging tab. Like the SMTP fallback, they're stored in the database, so setting them on the boilerplate covers every site cloned from it. While either field is blank, the `WPEL_HEALTH_REPORT_URL` / `WPEL_HEALTH_REPORT_SECRET` constants are used (see [Shared credentials](#shared-credentials-wp-configphp)). Reports are off until both are set. Once they are, the first report goes out within a few minutes, then hourly (on WP-Cron, so on site visits, unless the site has a real cron). **Last report** shows whether the collector accepted the latest one, and **Send report now** sends one straight away to check the setup.
+
+Reports hold only counts, settings flags and timestamps: no email addresses, subjects or message content. The site doesn't decide what's a problem; the collector does, so its rules can change without a plugin release.
+
+### For the collector
+
+Each report is a `POST` with a JSON body and two headers:
+
+- `X-WPEL-Timestamp`: Unix time of the send.
+- `X-WPEL-Signature`: hex HMAC-SHA256 of `<timestamp>.<raw body>`, keyed with the report secret.
+
+Recompute the signature over the raw body, compare with `hash_equals()`, and reject timestamps more than a few minutes old. Any 2xx response counts as accepted; anything else shows as a failure under **Last report**, with the start of the response body. Times are UTC ISO 8601, or `null` for never.
+
+```json
+{
+  "schema": 1,
+  "site": "clientsite.com",
+  "home_url": "https://clientsite.com",
+  "log_url": "https://clientsite.com/wp-admin/admin.php?page=wpel-log",
+  "environment": "production",
+  "plugin_version": "2.2.23",
+  "wp_version": "6.8.1",
+  "php_version": "8.2.29",
+  "generated_at": "2026-11-25T15:00:04Z",
+  "config": {
+    "transport": "api",
+    "api_sending_enabled": true,
+    "mailgun_domain": "mg.clientsite.com",
+    "signing_key_set": true,
+    "track_opens": true,
+    "watched_emails": 2,
+    "alert_phone_numbers": 1,
+    "twilio_configured": true,
+    "delivery_failure_texts": true,
+    "submission_texts": false
+  },
+  "activity": {
+    "last_webhook_at": "2026-11-25T14:42:10Z",
+    "last_webhook_rejected_at": null,
+    "last_open_at": "2026-11-25T13:05:51Z",
+    "last_success_at": "2026-11-25T14:42:10Z",
+    "last_unopened_check_at": "2026-11-25T14:00:02Z",
+    "unopened_check_scheduled": true,
+    "wp_cron_disabled": false,
+    "outage_alarm_active": false
+  },
+  "counts": {
+    "24h": { "logged": 9, "pending": 0, "sent": 0, "delivered": 9, "failed": 0, "temp_fail": 0, "complained": 0, "opened": 6, "via_api": 9 },
+    "7d":  { "logged": 41, "pending": 0, "sent": 1, "delivered": 39, "failed": 1, "temp_fail": 0, "complained": 0, "opened": 27, "via_api": 41 },
+    "stuck_pending": 0,
+    "stuck_sent_api": 0
+  }
+}
+```
+
+- `schema` goes up when a field changes meaning or is removed. New fields can appear without it changing.
+- `transport` is `api`, `smtp` (the SMTP fallback) or `default` (WordPress's own, usually PHP `mail()`).
+- `last_webhook_at` is the last Mailgun webhook that passed signature verification, of any kind. `last_webhook_rejected_at` is the last one that didn't: a wrong or missing signing key, but also any stray POST to the endpoint, so it's only meaningful alongside emails stuck at Sent. Both are updated at most every five minutes.
+- `last_success_at` is the last `delivered` webhook or SMTP fallback acceptance (the same signal outage detection uses).
+- `last_unopened_check_at` is the last run of the hourly unopened check, whether or not Track opens is on.
+- `counts` covers emails logged in the last 24 hours and 7 days. `opened` counts emails opened at least once. `via_api` counts emails with a Mailgun message ID, i.e. sent through the API (SMTP fallback and default-transport sends have none), so `transport: "api"` with `via_api` well below `logged` suggests another plugin is sending the site's mail.
+- `stuck_pending` counts emails from the last 7 days still pending after an hour (the send died part-way, or another plugin took over `wp_mail()`). `stuck_sent_api` counts API sends from the last 7 days still at Sent after two hours: a few can be slow deliveries, but a pile of them means webhooks aren't arriving.
+- `environment` is `wp_get_environment_type()`. Local (`local`) and staging copies cloned from a reporting site report too, under their own `site`, so the collector should ignore those or at least not alert when they go quiet.
+
+Rules should only fire when mail was actually sent: a site with no form submissions this week has nothing to deliver or open.
+
 ## Shared credentials (wp-config.php)
 
 The webhook signing key is normally entered as **Webhook signing key** on the Sending tab. While that field is blank, the plugin uses `WPEL_MAILGUN_SIGNING_KEY` from `wp-config.php` instead, the same way the Twilio constants below work:
@@ -106,6 +181,8 @@ define( 'WPEL_SLACK_WEBHOOK', 'https://hooks.slack.com/services/...' ); // unuse
 ```
 
 A key saved in Settings always wins over the constant. The setup checklist on the Settings page warns when neither is set: without a key every Mailgun webhook is rejected, so emails stay at Sent, opens aren't recorded and bounces don't alert.
+
+The [health report](#health-reports) URL and secret work the same way: `WPEL_HEALTH_REPORT_URL` and `WPEL_HEALTH_REPORT_SECRET` are used while the matching Settings field is blank.
 
 The Twilio credentials are entered in Settings (see the install steps above), not here. Sites that already define `WPEL_TWILIO_ACCOUNT_SID`, `WPEL_TWILIO_SID`, `WPEL_TWILIO_AUTH_TOKEN` or `WPEL_TWILIO_FROM_NUMBER` in `wp-config.php` keep working: each constant is used while its Settings field is blank, and a value saved in Settings wins over it. **Delivery failure** texts or submission texts still have to be turned on in Settings (unopened-email alerts text whenever alert phone numbers are saved), though sites upgraded with alert phone numbers already saved start out with Delivery failure texts enabled.
 

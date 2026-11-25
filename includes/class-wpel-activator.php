@@ -220,5 +220,7 @@ class WPEL_Activator {
 		if ( $ts ) {
 			wp_unschedule_event( $ts, 'wpel_check_unopened' );
 		}
+		// Scheduled by WPEL_Health_Report itself once reports are set up.
+		wp_clear_scheduled_hook( WPEL_Health_Report::CRON_HOOK );
 	}
 }

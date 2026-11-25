@@ -2,7 +2,7 @@
 Contributors: jimlaroche
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Stable tag: 2.2.23
+Stable tag: 2.2.24
 
 Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, reconciles delivery via Mailgun webhooks, and alerts on failure.
 
@@ -11,6 +11,14 @@ Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, re
 Form Alert replaces WP Mail SMTP (or any other SMTP plugin) as the mail transport, sending directly through Mailgun's HTTP API. Every send is logged and reconciled against Mailgun's webhook events (delivered vs. bounced vs. complained), and failures trigger alerts by email and SMS (Twilio). Sites without their own Mailgun domain yet send through a shared Mailgun SMTP fallback, with no delivery or open tracking. See README.md in the plugin folder for full setup and configuration details.
 
 == Changelog ==
+
+= 2.2.24 =
+* Added hourly health reports, which posted a signed summary of the site's email pipeline (counts, settings flags and timestamps, no addresses or content) to a collector the True Market team ran, so the team heard about quiet failures such as webhooks no longer arriving, opens no longer being recorded, a switch to the SMTP fallback or a site that stopped reporting
+* Added a Health reports section to the Alerting & Logging tab with a Report URL, a Report secret (masked once saved), the outcome of the last report and a Send report now button
+* Added the WPEL_HEALTH_REPORT_URL and WPEL_HEALTH_REPORT_SECRET wp-config.php constants, used while the matching fields were blank
+* Recorded when the last verified and rejected Mailgun webhooks arrived and when the hourly unopened check last ran, for the reports
+* Cleared the health report schedule when the plugin was deactivated
+* Documented health reports and the report format in README.md
 
 = 2.2.23 =
 * Added a Webhook signing key field to the Sending tab, masked once saved

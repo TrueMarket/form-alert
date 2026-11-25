@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Form Alert
  * Description: Sends all outgoing email directly through the Mailgun HTTP API (no SMTP plugin required), logs every send, reconciles real delivery status via Mailgun webhooks, flags failures, and alerts by email + SMS (Twilio).
- * Version:     2.2.23
+ * Version:     2.2.24
  * Author:      True Market
  * Author URI:  https://truemarket.ca
  * License:     GPL-2.0-or-later
@@ -96,6 +96,12 @@
  *   - DUPLICATE SUBMISSIONS: a form email identical to one sent in the last
  *     two minutes (e.g. a double-clicked submit button) isn't sent, logged
  *     or texted again. See find_duplicate().
+ *   - HEALTH REPORTS (off until a report URL + secret are set, Alerting &
+ *     Logging tab): an hourly cron (wpel_health_report) posts a signed
+ *     summary of this site's email pipeline (counts, settings flags and
+ *     timestamps; no addresses or content) to a collector the True Market
+ *     team runs, which alerts the team when a site's numbers look wrong or
+ *     it stops reporting. See includes/class-wpel-health.php.
  *   - Slack support still exists in the code (notify_slack() in
  *     class-wpel-monitor.php) but every call site is currently commented out
  *     in favor of Twilio SMS. Uncomment them to re-enable it alongside SMS.
@@ -123,6 +129,7 @@
  *   includes/class-wpel-mailer.php     Mailgun API transport, plus the shared Mailgun SMTP fallback.
  *   includes/class-wpel-monitor.php    Capture, webhook reconcile, alerting, log table access.
  *   includes/class-wpel-sources.php    Which form/page/request sent each email.
+ *   includes/class-wpel-health.php     Hourly health reports to the team's collector.
  *   admin/class-wpel-admin.php         Settings page + email log page.
  * ------------------------------------------------------------------------
  */
@@ -131,7 +138,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPEL_VERSION', '2.2.23' );
+define( 'WPEL_VERSION', '2.2.24' );
 define( 'WPEL_OPTION', 'wpel_settings' );
 define( 'WPEL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPEL_FILE', __FILE__ );
@@ -178,6 +185,7 @@ require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-activator.php';
 require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-monitor.php';
 require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-mailer.php';
 require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-sources.php';
+require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-health.php';
 
 register_activation_hook( __FILE__, array( 'WPEL_Activator', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'WPEL_Activator', 'deactivate' ) );
@@ -231,6 +239,7 @@ function wpel_boot() {
 	WPEL_Sources::instance();
 	WPEL_Mailgun_Monitor::instance();
 	WPEL_Mailer::instance();
+	WPEL_Health_Report::instance();
 
 	if ( is_admin() ) {
 		require_once WPEL_PLUGIN_DIR . 'admin/class-wpel-admin.php';

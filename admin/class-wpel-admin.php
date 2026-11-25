@@ -83,6 +83,8 @@ class WPEL_Admin {
 		add_action( 'admin_post_wpel_dismiss_alert_overlap', array( $this, 'handle_dismiss_alert_overlap' ) );
 		add_action( 'admin_post_wpel_check_mailgun_config', array( $this, 'handle_check_mailgun_config' ) );
 		add_action( 'admin_notices', array( $this, 'mailgun_config_check_notice' ) );
+		add_action( 'admin_post_wpel_send_health_report', array( $this, 'handle_send_health_report' ) );
+		add_action( 'admin_notices', array( $this, 'health_report_notice' ) );
 		add_action( 'wp_ajax_wpel_log_entry', array( $this, 'ajax_log_entry' ) );
 		add_action( 'admin_post_wpel_log_bulk', array( $this, 'handle_log_bulk' ) );
 		add_filter( 'removable_query_args', array( $this, 'removable_query_args' ) );
@@ -128,6 +130,10 @@ class WPEL_Admin {
 		// Webhook signing key (Sending tab). While it's blank, a
 		// WPEL_MAILGUN_SIGNING_KEY constant is used — see wpel_shared_credential().
 		$out['signing_key']      = $this->sanitize_secret( $input, $previous, 'signing_key' );
+		// Health reports to the team's collector (Alerting & Logging tab). While
+		// blank, WPEL_HEALTH_REPORT_URL / WPEL_HEALTH_REPORT_SECRET are used.
+		$out['health_report_url']    = esc_url_raw( trim( isset( $input['health_report_url'] ) ? (string) $input['health_report_url'] : '' ), array( 'https', 'http' ) );
+		$out['health_report_secret'] = $this->sanitize_secret( $input, $previous, 'health_report_secret' );
 		$out['alert_temp_fail']  = 0;
 		$out['retention_days']   = max( 0, (int) ( isset( $input['retention_days'] ) ? $input['retention_days'] : 30 ) );
 		$out['outage_threshold'] = max( 1, (int) ( isset( $input['outage_threshold'] ) ? $input['outage_threshold'] : 5 ) );
@@ -719,6 +725,86 @@ class WPEL_Admin {
 		<?php
 	}
 
+	/**
+	 * "Send report now" on the Alerting & Logging tab: sends a health report
+	 * straight away, so a new URL/secret can be checked against the collector
+	 * without waiting for the hourly run. The outcome is saved by
+	 * WPEL_Health_Report::send() and shown by health_report_notice().
+	 */
+	public function handle_send_health_report() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to do this.', 'wpel' ) );
+		}
+		check_admin_referer( 'wpel_send_health_report' );
+
+		$report = WPEL_Health_Report::instance();
+		if ( $report->is_configured() ) {
+			$result = $report->send() ? 'ok' : 'fail';
+		} else {
+			$result = 'off';
+		}
+
+		wp_safe_redirect(
+			add_query_arg(
+				array(
+					'page'        => 'wpel-settings',
+					'wpel_health' => $result,
+				),
+				admin_url( 'admin.php' )
+			)
+		);
+		exit;
+	}
+
+	public function health_report_notice() {
+		if ( ! isset( $_GET['wpel_health'], $_GET['page'] ) || 'wpel-settings' !== $_GET['page'] ) {
+			return;
+		}
+		$result = sanitize_key( wp_unslash( $_GET['wpel_health'] ) );
+
+		if ( 'off' === $result ) {
+			echo '<div class="notice notice-warning is-dismissible"><p>Health reports aren\'t set up. Save a report URL and secret on the Alerting &amp; Logging tab first.</p></div>';
+			return;
+		}
+		$status = WPEL_Health_Report::instance()->last_status();
+		if ( 'ok' === $result ) {
+			echo '<div class="notice notice-success is-dismissible"><p>' . esc_html( 'Health report sent. The collector accepted it (HTTP ' . ( isset( $status['code'] ) ? (int) $status['code'] : 200 ) . ').' ) . '</p></div>';
+		} else {
+			echo '<div class="notice notice-error is-dismissible"><p>' . esc_html( 'Health report failed: ' . $this->health_report_failure( $status ) ) . '</p></div>';
+		}
+	}
+
+	/** Why the last health report failed, in a sentence, from WPEL_Health_Report::last_status(). */
+	private function health_report_failure( $status ) {
+		$code  = isset( $status['code'] ) ? (int) $status['code'] : 0;
+		$error = isset( $status['error'] ) ? trim( (string) $status['error'] ) : '';
+		if ( ! $code ) {
+			return 'the collector couldn\'t be reached' . ( '' !== $error ? ' (' . $error . ')' : '' ) . '. Check the report URL.';
+		}
+		$why = 'the collector answered HTTP ' . $code . ( '' !== $error ? ': ' . $error : '' );
+		if ( 401 === $code || 403 === $code ) {
+			$why .= '. Check the report secret matches the collector\'s.';
+		}
+		return $why;
+	}
+
+	/** The "Last report" line in the Health reports section. */
+	private function health_report_summary() {
+		$report = WPEL_Health_Report::instance();
+		if ( ! $report->is_configured() ) {
+			return 'Off. Reports start within a few minutes of saving a report URL and secret.';
+		}
+		$status = $report->last_status();
+		if ( empty( $status['at'] ) ) {
+			return 'None sent yet. The first goes out within a few minutes (WP-Cron runs on site visits).';
+		}
+		$ago = human_time_diff( (int) $status['at'] ) . ' ago';
+		if ( ! empty( $status['ok'] ) ) {
+			return 'Accepted by the collector ' . $ago . ' (HTTP ' . (int) $status['code'] . ').';
+		}
+		return 'Failed ' . $ago . ': ' . $this->health_report_failure( $status );
+	}
+
 	public function admin_menu() {
 		add_menu_page(
 			'Form Alert',
@@ -992,6 +1078,40 @@ class WPEL_Admin {
 
 					<hr style="margin:24px 0;">
 
+					<h2 class="title">Health reports</h2>
+					<p class="description">Sends True Market an hourly summary of how this site's email is doing, so we hear about problems that never raise an alert here: webhooks that stop arriving, opens that stop being recorded, a switch to the SMTP fallback, or the site going quiet. Only counts, settings and timestamps are sent, never email addresses, subjects or message content.</p>
+					<table class="form-table" role="presentation">
+						<tr>
+							<th scope="row"><label for="wpel_health_report_url">Report URL</label></th>
+							<td><input name="<?php echo esc_attr( WPEL_OPTION ); ?>[health_report_url]" id="wpel_health_report_url" type="url" class="regular-text" autocomplete="off" value="<?php echo esc_attr( isset( $o['health_report_url'] ) ? $o['health_report_url'] : '' ); ?>" placeholder="<?php echo defined( 'WPEL_HEALTH_REPORT_URL' ) ? 'Using default from wp-config.php' : 'https://'; ?>">
+							<p class="description">Where reports are sent.
+							<?php if ( defined( 'WPEL_HEALTH_REPORT_URL' ) ) : ?>
+								A <code>WPEL_HEALTH_REPORT_URL</code> constant in <code>wp-config.php</code> is used while this is blank.
+							<?php else : ?>
+								Leave blank to turn reports off.
+							<?php endif; ?>
+							</p></td>
+						</tr>
+						<tr>
+							<th scope="row"><label for="wpel_health_report_secret">Report secret</label></th>
+							<td><input name="<?php echo esc_attr( WPEL_OPTION ); ?>[health_report_secret]" id="wpel_health_report_secret" type="password" class="regular-text" autocomplete="new-password" value="<?php echo ! empty( $o['health_report_secret'] ) ? esc_attr( self::SAVED_SECRET_MASK ) : ''; ?>"<?php echo empty( $o['health_report_secret'] ) && defined( 'WPEL_HEALTH_REPORT_SECRET' ) ? ' placeholder="Using default from wp-config.php"' : ''; ?>>
+							<p class="description">The same secret the collector has. It signs each report so the collector knows it came from this site.</p></td>
+						</tr>
+						<tr>
+							<th scope="row">Last report</th>
+							<td><?php echo esc_html( $this->health_report_summary() ); ?>
+							<?php if ( WPEL_Health_Report::instance()->is_configured() ) : ?>
+								<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'wpel_send_health_report' ) ); ?>" form="wpel-health-report-form">
+								<input type="hidden" name="action" value="wpel_send_health_report" form="wpel-health-report-form">
+								<button type="submit" class="button" form="wpel-health-report-form" style="margin-left:8px;">Send report now</button>
+								<p class="description">Save your changes before sending.</p>
+							<?php endif; ?>
+							</td>
+						</tr>
+					</table>
+
+					<hr style="margin:24px 0;">
+
 					<h2 class="title">Other watched emails</h2>
 					<p class="description">Emails that don't come from a Forminator or HTML Forms form, listed once they've been sent at least once. A ticked one works like a form ticked under "Watched forms" on the General tab: an alert if it isn't opened (with Track opens on) and a text when it's sent (with Submission texts on).</p>
 					<?php $this->render_other_watch( $o, $watched_forms ); ?>
@@ -1003,6 +1123,7 @@ class WPEL_Admin {
 			<form id="wpel-test-email-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"></form>
 			<form id="wpel-test-sms-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"></form>
 			<form id="wpel-dismiss-overlap-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"></form>
+			<form id="wpel-health-report-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>"></form>
 
 			</div>
 			<?php $this->render_setup_checklist( $o ); ?>
