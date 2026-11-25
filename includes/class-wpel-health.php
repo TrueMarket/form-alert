@@ -190,7 +190,11 @@ class WPEL_Health_Report {
 	 *   an hour (the send died part-way, or another plugin took over
 	 *   wp_mail()). counts.stuck_sent_api: API sends from the last 7 days
 	 *   still at Sent after two hours; a pile of them means webhooks aren't
-	 *   arriving.
+	 *   arriving. counts.stuck_sent_api_since_reconciled: the same, but only
+	 *   those sent after the newest API send a webhook moved past Sent, so
+	 *   emails stranded by an outage that's since been fixed stop counting
+	 *   once a webhook gets through (equal to stuck_sent_api when no webhook
+	 *   has reconciled an email this week). Added in 2.2.26.
 	 *
 	 * @return array
 	 */
@@ -295,13 +299,23 @@ class WPEL_Health_Report {
 		// Accepted by the Mailgun API but never reconciled by a webhook. A few
 		// can be slow deliveries; a pile of them means webhooks aren't reaching
 		// the site, so bounces and unopened emails aren't being alerted.
-		$out['stuck_sent_api'] = (int) $wpdb->get_var(
+		$stuck_sql             = "SELECT COUNT(*) FROM {$table} WHERE status = 'sent' AND mailgun_message_id IS NOT NULL AND mailgun_message_id <> '' AND created_at >= %s AND created_at < %s";
+		$two_hours_ago         = $this->local_time( $now - 2 * HOUR_IN_SECONDS );
+		$out['stuck_sent_api'] = (int) $wpdb->get_var( $wpdb->prepare( $stuck_sql, $week, $two_hours_ago ) );
+
+		// The same, counting only emails sent after the newest API send a
+		// webhook has moved past Sent. Webhooks were working when that one went
+		// out, so emails stuck before it were stranded by an outage that's over;
+		// they'd otherwise keep the count up for the rest of the week.
+		$reconciled = $wpdb->get_var(
 			$wpdb->prepare(
-				"SELECT COUNT(*) FROM {$table} WHERE status = 'sent' AND mailgun_message_id IS NOT NULL AND mailgun_message_id <> '' AND created_at >= %s AND created_at < %s",
-				$week,
-				$this->local_time( $now - 2 * HOUR_IN_SECONDS )
+				"SELECT MAX(created_at) FROM {$table} WHERE status NOT IN ('pending', 'sent') AND mailgun_message_id IS NOT NULL AND mailgun_message_id <> '' AND created_at >= %s",
+				$week
 			)
 		);
+		$out['stuck_sent_api_since_reconciled'] = $reconciled
+			? (int) $wpdb->get_var( $wpdb->prepare( $stuck_sql . ' AND created_at > %s', $week, $two_hours_ago, $reconciled ) )
+			: $out['stuck_sent_api'];
 
 		return $out;
 	}
