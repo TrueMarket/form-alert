@@ -2,7 +2,7 @@
 Contributors: jimlaroche
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Stable tag: 2.2.24
+Stable tag: 2.2.25
 
 Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, reconciles delivery via Mailgun webhooks, and alerts on failure.
 
@@ -11,6 +11,12 @@ Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, re
 Form Alert replaces WP Mail SMTP (or any other SMTP plugin) as the mail transport, sending directly through Mailgun's HTTP API. Every send is logged and reconciled against Mailgun's webhook events (delivered vs. bounced vs. complained), and failures trigger alerts by email and SMS (Twilio). Sites without their own Mailgun domain yet send through a shared Mailgun SMTP fallback, with no delivery or open tracking. See README.md in the plugin folder for full setup and configuration details.
 
 == Changelog ==
+
+= 2.2.25 =
+* Pointed the update checker at the GitHub repo's new name, TrueMarket/form-alert (the old mailgun-watch address still redirected, so earlier versions kept updating)
+* Rewrote README.md as a short overview with a map of the code and the release steps
+* Moved the health report format notes from the README into includes/class-wpel-health.php, next to the code that built the report
+* Changed the update checker comment to say a GitHub token was only needed while the repo was private
 
 = 2.2.24 =
 * Added hourly health reports, which posted a signed summary of the site's email pipeline (counts, settings flags and timestamps, no addresses or content) to a collector the True Market team ran, so the team heard about quiet failures such as webhooks no longer arriving, opens no longer being recorded, a switch to the SMTP fallback or a site that stopped reporting

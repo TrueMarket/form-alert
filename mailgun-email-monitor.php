@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Form Alert
  * Description: Sends all outgoing email directly through the Mailgun HTTP API (no SMTP plugin required), logs every send, reconciles real delivery status via Mailgun webhooks, flags failures, and alerts by email + SMS (Twilio).
- * Version:     2.2.24
+ * Version:     2.2.25
  * Author:      True Market
  * Author URI:  https://truemarket.ca
  * License:     GPL-2.0-or-later
@@ -138,7 +138,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPEL_VERSION', '2.2.24' );
+define( 'WPEL_VERSION', '2.2.25' );
 define( 'WPEL_OPTION', 'wpel_settings' );
 define( 'WPEL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPEL_FILE', __FILE__ );
@@ -179,7 +179,7 @@ function wpel_force_from( $o, $which ) {
 }
 
 // GitHub repo the update checker reads releases/tags from.
-define( 'WPEL_GITHUB_REPO', 'https://github.com/TrueMarket/mailgun-watch/' );
+define( 'WPEL_GITHUB_REPO', 'https://github.com/TrueMarket/form-alert/' );
 
 require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-activator.php';
 require_once WPEL_PLUGIN_DIR . 'includes/class-wpel-monitor.php';
@@ -216,9 +216,9 @@ function wpel_init_updater() {
 	// branch, PUC prefers GitHub releases/tags over raw branch commits.
 	$update_checker->setBranch( 'main' );
 
-	// The GitHub repo is private, so a token is required to read releases/tags.
-	// Define this in wp-config.php (fine-grained PAT, "Contents: Read-only",
-	// scoped to just this repo) — same pattern as WPEL_MAILGUN_SIGNING_KEY etc.
+	// A token is only needed while the GitHub repo is private. Define this in
+	// wp-config.php (fine-grained PAT, "Contents: Read-only", scoped to just
+	// this repo) — same pattern as WPEL_MAILGUN_SIGNING_KEY etc.
 	if ( defined( 'WPEL_GITHUB_TOKEN' ) && WPEL_GITHUB_TOKEN ) {
 		$update_checker->setAuthentication( WPEL_GITHUB_TOKEN );
 	}

@@ -20,7 +20,9 @@
  *   X-WPEL-Signature: hex HMAC-SHA256 of "<timestamp>.<raw request body>"
  * The collector should recompute the signature over the raw body, compare
  * with hash_equals(), and reject timestamps more than a few minutes old.
- * Any 2xx response counts as accepted. See the README for the payload.
+ * Any 2xx response counts as accepted. The payload is described on
+ * snapshot() below; the collector (TrueMarket/form-alert-collector) depends
+ * on it, so bump SCHEMA if a field changes meaning or is removed.
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -163,6 +165,32 @@ class WPEL_Health_Report {
 
 	/**
 	 * The report itself. Times are UTC ISO 8601 strings, or null for never.
+	 *
+	 * - schema: goes up when a field changes meaning or is removed. New
+	 *   fields can appear without it changing.
+	 * - environment: wp_get_environment_type(). Local and staging copies
+	 *   cloned from a reporting site report too, under their own `site`.
+	 * - config.transport: 'api', 'smtp' (the SMTP fallback) or 'default'
+	 *   (WordPress's own, usually PHP mail()).
+	 * - activity.last_webhook_at: last Mailgun webhook that passed signature
+	 *   verification, of any kind. last_webhook_rejected_at: last one that
+	 *   didn't (a wrong or missing signing key, but also any stray POST to
+	 *   the endpoint, so only meaningful alongside emails stuck at Sent).
+	 *   Both are updated at most every MARK_RESOLUTION seconds.
+	 * - activity.last_success_at: last `delivered` webhook or SMTP fallback
+	 *   acceptance (the signal outage detection uses).
+	 * - activity.last_unopened_check_at: last run of the hourly unopened
+	 *   check, whether or not Track opens is on.
+	 * - counts.24h / counts.7d: emails logged in that window, by status.
+	 *   `opened` counts emails opened at least once. `via_api` counts emails
+	 *   with a Mailgun message ID (sent through the API; SMTP fallback and
+	 *   default-transport sends have none), so transport 'api' with via_api
+	 *   well below `logged` suggests another plugin is sending the mail.
+	 * - counts.stuck_pending: emails from the last 7 days still pending after
+	 *   an hour (the send died part-way, or another plugin took over
+	 *   wp_mail()). counts.stuck_sent_api: API sends from the last 7 days
+	 *   still at Sent after two hours; a pile of them means webhooks aren't
+	 *   arriving.
 	 *
 	 * @return array
 	 */
