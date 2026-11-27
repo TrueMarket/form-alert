@@ -908,8 +908,8 @@ class WPEL_Admin {
 						</tr>
 						<tr>
 							<th scope="row">Track opens</th>
-							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[track_opens]" id="wpel_track_opens" value="1" <?php checked( $track_opens ); ?>> Alert me when form submissions are read</label>
-							<p class="description">Shows in the Log whether each email was opened. Treat it as a good hint, not a guarantee: some email apps open emails automatically.</p>
+							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[track_opens]" id="wpel_track_opens" value="1" <?php checked( $track_opens ); ?>> Alert me when form submissions are missed</label>
+							<p class="description">A submission counts as missed when nobody opens its email within the time set below. The Log also shows whether each email was opened. Opens by spam filters, and by email apps that load every email as it arrives, don't count. Apple Mail hides when its users open an email, so an email read there may still be reported as missed.</p>
 							<div class="wpel-unopened-row"<?php echo $track_opens ? '' : ' style="display:none"'; ?>>
 								<p><label for="wpel_unopened_hours">Alert me if a form submission email isn't opened within</label>
 								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_hours]" id="wpel_unopened_hours" type="number" min="1" value="<?php echo esc_attr( isset( $o['unopened_hours'] ) ? $o['unopened_hours'] : 24 ); ?>" style="width:70px"> hours</p>

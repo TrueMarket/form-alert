@@ -552,7 +552,14 @@ class WPEL_Mailgun_Monitor {
 		// row to attach to, there's nothing useful to log.
 		if ( 'opened' === $type ) {
 			if ( $row_id && $this->row_exists( $row_id ) ) {
-				$this->record_open( $row_id );
+				$bot = $this->open_bot( $event );
+				if ( '' === $bot ) {
+					$this->record_open( $row_id );
+				} else {
+					// Not counted, so the email can still be alerted as missed;
+					// kept on the timeline so it's clear why Opens stayed at 0.
+					$this->log_event( $row_id, 'automatic_open: ' . $bot );
+				}
 			}
 			return new WP_REST_Response( array( 'ok' => true ), 200 );
 		}
@@ -1564,8 +1571,24 @@ class WPEL_Mailgun_Monitor {
 	}
 
 	/**
+	 * What opened the email when it wasn't a person, from Mailgun's bot
+	 * detection (client-info.bot on the 'opened' event): 'apple' (Apple Mail
+	 * Privacy Protection loading every email as it arrives), 'gmail' (Gmail
+	 * fetching images on delivery), 'generic' (most likely a firewall or
+	 * antivirus scan), or '' for an open Mailgun thinks a person made. An
+	 * event without the field counts as a person, as every open did before.
+	 *
+	 * @param array $event The webhook's event-data.
+	 * @return string
+	 */
+	private function open_bot( $event ) {
+		$bot = isset( $event['client-info']['bot'] ) && is_scalar( $event['client-info']['bot'] ) ? (string) $event['client-info']['bot'] : '';
+		return sanitize_key( $bot );
+	}
+
+	/**
 	 * Bumps open_count and stamps first/last_opened_at for an 'opened' webhook
-	 * event. A raw UPDATE (rather than read-then-write via update_row()) so
+	 * event Mailgun didn't flag as automatic (see open_bot()). A raw UPDATE (rather than read-then-write via update_row()) so
 	 * concurrent opens for the same row increment atomically instead of racing.
 	 */
 	private function record_open( $id ) {

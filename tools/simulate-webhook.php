@@ -72,8 +72,10 @@ $get_row = function ( $id ) use ( $wpdb, $table ) {
 /**
  * Builds a Mailgun-shaped webhook payload. $sig_mode: 'valid', 'bad'
  * (wrong signature) or 'stale' (valid signature, 20-minute-old timestamp).
+ * $bot: for an 'opened' event, Mailgun's client-info.bot ('apple', 'gmail',
+ * 'generic'), '' for an open by a person.
  */
-$build_payload = function ( $event, $message_id, $recipient, $subject, $sig_mode = 'valid' ) use ( $signing_key, $domain ) {
+$build_payload = function ( $event, $message_id, $recipient, $subject, $sig_mode = 'valid', $bot = '' ) use ( $signing_key, $domain ) {
 	$timestamp = (string) ( 'stale' === $sig_mode ? time() - 20 * MINUTE_IN_SECONDS : time() );
 	$token     = bin2hex( random_bytes( 25 ) );
 	$signature = hash_hmac( 'sha256', $timestamp . $token, $signing_key );
@@ -101,7 +103,7 @@ $build_payload = function ( $event, $message_id, $recipient, $subject, $sig_mode
 	}
 	if ( 'opened' === $event ) {
 		$data['ip']             = '203.0.113.10';
-		$data['client-info']    = array( 'client-name' => 'Simulator', 'device-type' => 'desktop' );
+		$data['client-info']    = array( 'client-name' => 'Simulator', 'device-type' => 'desktop', 'bot' => $bot );
 	}
 
 	return array(
@@ -230,9 +232,20 @@ WP_CLI::log( 'Open tracking' );
 
 $opens_before = (int) $row->open_count;
 
+// Automatic opens first, so the first counted open below is still the first.
+foreach ( array( 'apple', 'gmail', 'generic' ) as $bot ) {
+	$code = $send( $build_payload( 'opened', $message_id, $recipient, $subject, 'valid', $bot ) );
+	$row  = $get_row( $row_id );
+	$check(
+		"Automatic open (bot={$bot}) → 200, not counted, noted on the timeline",
+		200 === $code && (int) $row->open_count === $opens_before && false !== strpos( (string) $row->event_log, 'automatic_open: ' . $bot ),
+		"HTTP {$code}, open_count {$row->open_count}"
+	);
+}
+
 $code = $send( $build_payload( 'opened', $message_id, $recipient, $subject ) );
 $row  = $get_row( $row_id );
-$check( 'First open → 200, open_count +1', 200 === $code && (int) $row->open_count === $opens_before + 1, "HTTP {$code}, open_count {$row->open_count}" );
+$check( 'First open by a person → 200, open_count +1', 200 === $code && (int) $row->open_count === $opens_before + 1, "HTTP {$code}, open_count {$row->open_count}" );
 $check( 'first_opened_at and last_opened_at are set', ! empty( $row->first_opened_at ) && ! empty( $row->last_opened_at ), "first {$row->first_opened_at}" );
 $check( 'Open did not overwrite the delivery status', 'delivered' === $row->status, "status {$row->status}" );
 

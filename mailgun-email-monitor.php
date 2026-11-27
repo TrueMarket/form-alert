@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Form Alert
  * Description: Sends all outgoing email directly through the Mailgun HTTP API (no SMTP plugin required), logs every send, reconciles real delivery status via Mailgun webhooks, flags failures, and alerts by email + SMS (Twilio).
- * Version:     2.2.26
+ * Version:     2.2.27
  * Author:      True Market
  * Author URI:  https://truemarket.ca
  * License:     GPL-2.0-or-later
@@ -58,10 +58,14 @@
  *     embeds a tracking pixel in outgoing HTML mail and fires an `opened`
  *     event (possibly several times) per recipient. This does NOT overwrite
  *     `status` — delivered stays the terminal delivery outcome — it just
- *     bumps open_count/first_opened_at/last_opened_at on the row. Treat it as
- *     a soft signal: plain-text mail has no pixel to track, and privacy
- *     features like Apple Mail Privacy Protection can auto-fetch the pixel on
- *     delivery regardless of whether anyone actually read the email.
+ *     bumps open_count/first_opened_at/last_opened_at on the row. Opens
+ *     Mailgun's bot detection flags as automatic (Apple Mail Privacy
+ *     Protection, Gmail fetching on delivery, firewall/antivirus scans) aren't
+ *     counted, only noted on the row's timeline, so they can't hide an email
+ *     nobody read. Treat it as a soft signal: plain-text mail has no pixel to
+ *     track, and an Apple Mail Privacy Protection user's real open never
+ *     reaches Mailgun (Apple already fetched the pixel), so their emails look
+ *     unopened even when read.
  *
  * ALERTING
  *   - When SMS alerts ("Delivery failure" on the General tab, saved as
@@ -138,7 +142,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPEL_VERSION', '2.2.26' );
+define( 'WPEL_VERSION', '2.2.27' );
 define( 'WPEL_OPTION', 'wpel_settings' );
 define( 'WPEL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPEL_FILE', __FILE__ );
