@@ -909,15 +909,14 @@ class WPEL_Admin {
 						<tr>
 							<th scope="row">Track opens</th>
 							<td><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[track_opens]" id="wpel_track_opens" value="1" <?php checked( $track_opens ); ?>> Alert me when form submissions are missed</label>
-							<p class="description">A submission counts as missed when nobody opens its email within the time set below. The Log also shows whether each email was opened. Opens by spam filters, and by email apps that load every email as it arrives, don't count. Apple Mail hides when its users open an email, so an email read there may still be reported as missed.</p>
+							<?php // Missed-submission alerts always go by both channels, see WPEL_Mailgun_Monitor::notify_unopened(). ?>
+							<p class="description">Shows in the Log whether each email was opened. Treat it as a good hint, not a guarantee: some email apps open emails automatically. Sent by SMS and email (to the alert email).</p>
 							<div class="wpel-unopened-row"<?php echo $track_opens ? '' : ' style="display:none"'; ?>>
 								<p><label for="wpel_unopened_hours">Alert me if a form submission email isn't opened within</label>
 								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_hours]" id="wpel_unopened_hours" type="number" min="1" value="<?php echo esc_attr( isset( $o['unopened_hours'] ) ? $o['unopened_hours'] : 24 ); ?>" style="width:70px"> hours</p>
 								<?php // The second threshold counts from sending too; sanitize_settings() keeps it above the first. ?>
 								<p><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_second]" value="1" <?php checked( $unopened_second ); ?>> Alert again if it's still unopened after</label>
 								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_second_hours]" type="number" min="2" aria-label="Hours before alerting again" value="<?php echo esc_attr( isset( $o['unopened_second_hours'] ) ? $o['unopened_second_hours'] : 48 ); ?>" style="width:70px"> hours</p>
-								<?php // Always both channels, see WPEL_Mailgun_Monitor::notify_unopened(). ?>
-								<p class="description">Sent by SMS and email (to the alert email).</p>
 							</div></td>
 						</tr>
 						<?php // Stored as sms_enabled: failure and outage texts only (see WPEL_Mailgun_Monitor::sms_enabled()). ?>
