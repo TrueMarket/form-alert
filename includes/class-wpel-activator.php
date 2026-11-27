@@ -188,8 +188,8 @@ class WPEL_Activator {
 			'unopened_second'       => 0,
 			'unopened_second_hours' => 48,
 			// 'minutes' counts unopened_hours in minutes, for testing (the
-			// secondary stays in hours); local/development sites only
-			// (WPEL_Mailgun_Monitor::unopened_unit()).
+			// secondary stays in hours); only where
+			// WPEL_Mailgun_Monitor::minutes_allowed().
 			'unopened_unit'         => 'hours',
 			// "Watched emails" (a list of sources, see WPEL_Sources): the only
 			// emails unopened alerts cover, and texted as soon as they're sent

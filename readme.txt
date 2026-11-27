@@ -2,7 +2,7 @@
 Contributors: jimlaroche
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Stable tag: 2.2.29
+Stable tag: 2.2.30
 
 Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, reconciles delivery via Mailgun webhooks, and alerts on failure.
 
@@ -11,6 +11,9 @@ Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, re
 Form Alert replaces WP Mail SMTP (or any other SMTP plugin) as the mail transport, sending directly through Mailgun's HTTP API. Every send is logged and reconciled against Mailgun's webhook events (delivered vs. bounced vs. complained), and failures trigger alerts by email and SMS (Twilio). Sites without their own Mailgun domain yet send through a shared Mailgun SMTP fallback, with no delivery or open tracking. See README.md in the plugin folder for full setup and configuration details.
 
 == Changelog ==
+
+= 2.2.30 =
+* Added a WPEL_ALLOW_MINUTES constant for wp-config.php: set to true, it offered and applied the minutes option for the unopened alert time on any site, including production; set to false, it turned minutes off on local and development sites too
 
 = 2.2.29 =
 * Added a minutes option to the unopened alert time, for testing; it was offered and applied only on local and development sites, so a database copied to staging or production went back to hours

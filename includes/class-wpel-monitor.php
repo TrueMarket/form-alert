@@ -1252,9 +1252,9 @@ class WPEL_Mailgun_Monitor {
 	 * alerted once more. unopened_alerted counts the alerts sent: 0 none, 1
 	 * the first, 2 the secondary.
 	 *
-	 * The first threshold is counted in unopened_unit(): hours, or minutes on
-	 * a local/development site set up for testing, when MINUTE_CHECK_HOOK runs
-	 * this every minute too. The secondary one is always in hours.
+	 * The first threshold is counted in unopened_unit(): hours, or minutes
+	 * for testing where minutes_allowed(), when MINUTE_CHECK_HOOK runs this
+	 * every minute too. The secondary one is always in hours.
 	 *
 	 * Runs whenever open tracking is on (see unopened_alerts_enabled()):
 	 * there's no separate switch, and it can't run without, since every
@@ -1320,10 +1320,10 @@ class WPEL_Mailgun_Monitor {
 
 	/**
 	 * The unit unopened_hours (the first threshold) is counted in, in
-	 * seconds: an hour, or a minute when unopened_unit is 'minutes' on a
-	 * local or development site (is_dev_site()). Minutes exist to test
-	 * unopened alerts without waiting hours, so they never apply on staging
-	 * or production, even when a database with them saved is cloned there.
+	 * seconds: an hour, or a minute when unopened_unit is 'minutes' on a site
+	 * where minutes_allowed(). Minutes exist to test unopened alerts without
+	 * waiting hours, so a database with them saved, cloned to a site where
+	 * they aren't allowed, goes back to hours.
 	 *
 	 * @param array|null $o Settings to check; null for the saved ones.
 	 * @return int
@@ -1331,11 +1331,22 @@ class WPEL_Mailgun_Monitor {
 	public function unopened_unit( $o = null ) {
 		$o = $this->settings( $o );
 		$minutes = isset( $o['unopened_unit'] ) && 'minutes' === $o['unopened_unit'];
-		return ( $minutes && self::is_dev_site() ) ? MINUTE_IN_SECONDS : HOUR_IN_SECONDS;
+		return ( $minutes && self::minutes_allowed() ) ? MINUTE_IN_SECONDS : HOUR_IN_SECONDS;
 	}
 
-	/** Whether this is a local or development copy (wp_get_environment_type()), where testing-only settings show and apply. */
-	public static function is_dev_site() {
+	/**
+	 * Whether the minutes unit for the first unopened alert shows and applies
+	 * here. WPEL_ALLOW_MINUTES in wp-config.php decides when it's defined
+	 * (true allows minutes on any site, false turns them off even on a dev
+	 * site); otherwise only local and development sites
+	 * (wp_get_environment_type()) allow them. It's a wp-config.php constant,
+	 * not a setting, because wp-config.php isn't copied along with the
+	 * database.
+	 */
+	public static function minutes_allowed() {
+		if ( defined( 'WPEL_ALLOW_MINUTES' ) ) {
+			return (bool) WPEL_ALLOW_MINUTES;
+		}
 		return in_array( wp_get_environment_type(), array( 'local', 'development' ), true );
 	}
 
