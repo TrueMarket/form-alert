@@ -2,7 +2,7 @@
 Contributors: jimlaroche
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
-Stable tag: 2.2.28
+Stable tag: 2.2.29
 
 Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, reconciles delivery via Mailgun webhooks, and alerts on failure.
 
@@ -11,6 +11,11 @@ Sends outgoing WordPress email through the Mailgun HTTP API, logs every send, re
 Form Alert replaces WP Mail SMTP (or any other SMTP plugin) as the mail transport, sending directly through Mailgun's HTTP API. Every send is logged and reconciled against Mailgun's webhook events (delivered vs. bounced vs. complained), and failures trigger alerts by email and SMS (Twilio). Sites without their own Mailgun domain yet send through a shared Mailgun SMTP fallback, with no delivery or open tracking. See README.md in the plugin folder for full setup and configuration details.
 
 == Changelog ==
+
+= 2.2.29 =
+* Added a minutes option to the unopened alert time, for testing; it was offered and applied only on local and development sites, so a database copied to staging or production went back to hours
+* Added an every-minute unopened check (wpel_check_unopened_minutely) that ran only while minutes were on, unscheduled itself once they no longer applied and was cleared on deactivation
+* Skipped the backlog of delivered, unopened emails when switching to minutes, so they weren't all alerted at once
 
 = 2.2.28 =
 * Went back to the earlier Track opens description ("Shows in the Log whether each email was opened...") and moved "Sent by SMS and email (to the alert email)." from under the hour fields to the end of it

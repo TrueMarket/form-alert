@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Form Alert
  * Description: Sends all outgoing email directly through the Mailgun HTTP API (no SMTP plugin required), logs every send, reconciles real delivery status via Mailgun webhooks, flags failures, and alerts by email + SMS (Twilio).
- * Version:     2.2.28
+ * Version:     2.2.29
  * Author:      True Market
  * Author URI:  https://truemarket.ca
  * License:     GPL-2.0-or-later
@@ -88,7 +88,9 @@
  *     flags each row once, in one summary alert per run, sent by email and by
  *     text to the alert phone numbers, whether or not SMS alerts are on (see
  *     check_unopened() in includes/class-wpel-monitor.php). An optional secondary notice alerts
- *     again for rows still unopened past a second, later threshold. It only covers
+ *     again for rows still unopened past a second, later threshold. On local and
+ *     development sites the first threshold can be set in minutes for testing,
+ *     which adds an every-minute check (wpel_check_unopened_minutely). It only covers
  *     the sources ticked under "Watched emails", e.g. one Forminator notification
  *     or HTML Forms email action: every row records what sent it (see
  *     includes/class-wpel-sources.php).
@@ -142,7 +144,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPEL_VERSION', '2.2.28' );
+define( 'WPEL_VERSION', '2.2.29' );
 define( 'WPEL_OPTION', 'wpel_settings' );
 define( 'WPEL_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WPEL_FILE', __FILE__ );

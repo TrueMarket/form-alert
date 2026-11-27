@@ -187,6 +187,10 @@ class WPEL_Activator {
 			// after sending (always later than unopened_hours).
 			'unopened_second'       => 0,
 			'unopened_second_hours' => 48,
+			// 'minutes' counts unopened_hours in minutes, for testing (the
+			// secondary stays in hours); local/development sites only
+			// (WPEL_Mailgun_Monitor::unopened_unit()).
+			'unopened_unit'         => 'hours',
 			// "Watched emails" (a list of sources, see WPEL_Sources): the only
 			// emails unopened alerts cover, and texted as soon as they're sent
 			// with submission_texts on. Empty = neither kind of alert.
@@ -220,6 +224,7 @@ class WPEL_Activator {
 		if ( $ts ) {
 			wp_unschedule_event( $ts, 'wpel_check_unopened' );
 		}
+		wp_clear_scheduled_hook( WPEL_Mailgun_Monitor::MINUTE_CHECK_HOOK );
 		// Scheduled by WPEL_Health_Report itself once reports are set up.
 		wp_clear_scheduled_hook( WPEL_Health_Report::CRON_HOOK );
 	}

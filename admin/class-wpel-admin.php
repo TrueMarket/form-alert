@@ -139,9 +139,12 @@ class WPEL_Admin {
 		$out['outage_threshold'] = max( 1, (int) ( isset( $input['outage_threshold'] ) ? $input['outage_threshold'] : 5 ) );
 		$out['outage_window']    = max( 1, (int) ( isset( $input['outage_window'] ) ? $input['outage_window'] : 15 ) );
 		$out['unopened_hours']   = max( 1, (int) ( isset( $input['unopened_hours'] ) ? $input['unopened_hours'] : 24 ) );
+		// Testing only: unopened_hours in minutes. Offered and honoured on
+		// local/development sites only, see WPEL_Mailgun_Monitor::unopened_unit().
+		$out['unopened_unit']    = ( isset( $input['unopened_unit'] ) && 'minutes' === $input['unopened_unit'] ) ? 'minutes' : 'hours';
 		$out['unopened_second']  = ! empty( $input['unopened_second'] ) ? 1 : 0;
-		// The secondary notice always comes after the first alert.
-		$out['unopened_second_hours'] = max( $out['unopened_hours'] + 1, (int) ( isset( $input['unopened_second_hours'] ) ? $input['unopened_second_hours'] : 48 ) );
+		// Always in hours, and always after the first alert.
+		$out['unopened_second_hours'] = max( WPEL_Mailgun_Monitor::instance()->unopened_second_min_hours( $out ), (int) ( isset( $input['unopened_second_hours'] ) ? $input['unopened_second_hours'] : 48 ) );
 		// "Watched emails": texted when sent (Submission texts) and alerted if unopened (Track opens).
 		$out['watched_sources']  = $this->sanitize_watch( $input );
 
@@ -171,6 +174,13 @@ class WPEL_Admin {
 		if ( $out['unopened_second'] && empty( $previous['unopened_second'] ) ) {
 			$monitor->skip_second_unopened_backlog( $out['unopened_second_hours'] );
 		}
+
+		// Switching to minutes shrinks the thresholds, so every delivered,
+		// unopened email from the last day or two would be flagged at once.
+		if ( MINUTE_IN_SECONDS === $monitor->unopened_unit( $out ) && MINUTE_IN_SECONDS !== $monitor->unopened_unit( $previous ) ) {
+			$monitor->skip_unopened_backlog();
+		}
+		$monitor->sync_minute_check( $out );
 
 		return $out;
 	}
@@ -833,6 +843,7 @@ class WPEL_Admin {
 		$submission_texts = ! empty( $o['submission_texts'] );
 		$track_opens      = ! empty( $o['track_opens'] );
 		$unopened_second  = ! empty( $o['unopened_second'] );
+		$unopened_minutes = MINUTE_IN_SECONDS === WPEL_Mailgun_Monitor::instance()->unopened_unit( $o );
 		$form_plugins     = WPEL_Sources::instance()->form_plugins();
 		$alert_overlaps   = $this->undismissed_overlaps( $this->alert_email_overlaps( $o, $form_plugins ) );
 		?>
@@ -913,10 +924,22 @@ class WPEL_Admin {
 							<p class="description">Shows in the Log whether each email was opened. Treat it as a good hint, not a guarantee: some email apps open emails automatically. Sent by SMS and email (to the alert email).</p>
 							<div class="wpel-unopened-row"<?php echo $track_opens ? '' : ' style="display:none"'; ?>>
 								<p><label for="wpel_unopened_hours">Alert me if a form submission email isn't opened within</label>
-								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_hours]" id="wpel_unopened_hours" type="number" min="1" value="<?php echo esc_attr( isset( $o['unopened_hours'] ) ? $o['unopened_hours'] : 24 ); ?>" style="width:70px"> hours</p>
+								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_hours]" id="wpel_unopened_hours" type="number" min="1" value="<?php echo esc_attr( isset( $o['unopened_hours'] ) ? $o['unopened_hours'] : 24 ); ?>" style="width:70px">
+								<?php // Minutes are for testing, so only local/development sites get the choice (see WPEL_Mailgun_Monitor::unopened_unit()). ?>
+								<?php if ( WPEL_Mailgun_Monitor::is_dev_site() ) : ?>
+									<select name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_unit]" id="wpel_unopened_unit" aria-label="Unit for the unopened alert time">
+										<option value="hours" <?php selected( ! $unopened_minutes ); ?>>hours</option>
+										<option value="minutes" <?php selected( $unopened_minutes ); ?>>minutes</option>
+									</select>
+								<?php else : ?>
+									hours
+								<?php endif; ?></p>
 								<?php // The second threshold counts from sending too; sanitize_settings() keeps it above the first. ?>
 								<p><label><input type="checkbox" name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_second]" value="1" <?php checked( $unopened_second ); ?>> Alert again if it's still unopened after</label>
 								<input name="<?php echo esc_attr( WPEL_OPTION ); ?>[unopened_second_hours]" type="number" min="2" aria-label="Hours before alerting again" value="<?php echo esc_attr( isset( $o['unopened_second_hours'] ) ? $o['unopened_second_hours'] : 48 ); ?>" style="width:70px"> hours</p>
+								<?php if ( WPEL_Mailgun_Monitor::is_dev_site() ) : ?>
+									<p class="description">Minutes are for testing and only offered on local and development sites. With minutes on, the check runs every minute, whenever WP-Cron next fires (any page load). The second alert stays in hours.</p>
+								<?php endif; ?>
 							</div></td>
 						</tr>
 						<?php // Stored as sms_enabled: failure and outage texts only (see WPEL_Mailgun_Monitor::sms_enabled()). ?>

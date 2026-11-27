@@ -47,6 +47,9 @@ class WPEL_Mailgun_Monitor {
 	/** Seconds an identical form email counts as a duplicate submission (filterable: wpel_duplicate_window), see find_duplicate(). */
 	const DUPLICATE_WINDOW = 120;
 
+	/** Cron hook for the every-minute unopened check, scheduled only while the first threshold is in minutes (see unopened_unit()). */
+	const MINUTE_CHECK_HOOK = 'wpel_check_unopened_minutely';
+
 	/**
 	 * How far along its life each status is, so a late event can't move a row
 	 * back (see advance_status()). Equal stages may replace each other: a
@@ -117,6 +120,8 @@ class WPEL_Mailgun_Monitor {
 		// Cron pruning + unopened-email sweep.
 		add_action( 'wpel_prune_logs', array( $this, 'prune_logs' ) );
 		add_action( 'wpel_check_unopened', array( $this, 'check_unopened' ) );
+		add_action( self::MINUTE_CHECK_HOOK, array( $this, 'check_unopened_minutely' ) );
+		add_filter( 'cron_schedules', array( $this, 'add_minute_schedule' ) );
 	}
 
 	/* -------------------------------------------------------------------- */
@@ -1247,6 +1252,10 @@ class WPEL_Mailgun_Monitor {
 	 * alerted once more. unopened_alerted counts the alerts sent: 0 none, 1
 	 * the first, 2 the secondary.
 	 *
+	 * The first threshold is counted in unopened_unit(): hours, or minutes on
+	 * a local/development site set up for testing, when MINUTE_CHECK_HOOK runs
+	 * this every minute too. The secondary one is always in hours.
+	 *
 	 * Runs whenever open tracking is on (see unopened_alerts_enabled()):
 	 * there's no separate switch, and it can't run without, since every
 	 * delivered email would look unopened.
@@ -1265,27 +1274,108 @@ class WPEL_Mailgun_Monitor {
 		// Secondary first, so a row flagged by the first alert below waits
 		// at least until the next run for its second.
 		if ( $this->opt( 'unopened_second', 0 ) ) {
-			$hours = $this->unopened_second_hours();
-			$rows  = $this->flag_unopened( 1, $hours, $scope );
+			$after = $this->unopened_second_hours() * HOUR_IN_SECONDS;
+			$rows  = $this->flag_unopened( 1, $after, $scope );
 			if ( $rows ) {
-				$this->notify_unopened( $rows, $hours, true );
+				$this->notify_unopened( $rows, $after, true );
 			}
 		}
 
-		$hours = max( 1, (int) $this->opt( 'unopened_hours', 24 ) );
-		$rows  = $this->flag_unopened( 0, $hours, $scope );
+		$after = $this->unopened_first_seconds();
+		$rows  = $this->flag_unopened( 0, $after, $scope );
 		if ( $rows ) {
-			$this->notify_unopened( $rows, $hours );
+			$this->notify_unopened( $rows, $after );
 		}
 	}
 
 	/**
+	 * Seconds after sending the first unopened alert goes out:
+	 * unopened_hours, counted in unopened_unit()s.
+	 *
+	 * @param array|null $o Settings to check; null for the saved ones.
+	 */
+	public function unopened_first_seconds( $o = null ) {
+		$o = $this->settings( $o );
+		return max( 1, (int) ( isset( $o['unopened_hours'] ) ? $o['unopened_hours'] : 24 ) ) * $this->unopened_unit( $o );
+	}
+
+	/**
 	 * Hours after sending the secondary notice goes out: always later than
-	 * the first alert.
+	 * the first alert, and always in hours, even while the first is in minutes.
 	 */
 	public function unopened_second_hours() {
-		$first = max( 1, (int) $this->opt( 'unopened_hours', 24 ) );
-		return max( $first + 1, (int) $this->opt( 'unopened_second_hours', 48 ) );
+		return max( $this->unopened_second_min_hours(), (int) $this->opt( 'unopened_second_hours', 48 ) );
+	}
+
+	/**
+	 * The fewest whole hours the secondary notice can wait and still come
+	 * after the first alert: first + 1 in hours, 1 for a first alert under
+	 * an hour.
+	 *
+	 * @param array|null $o Settings to check; null for the saved ones.
+	 */
+	public function unopened_second_min_hours( $o = null ) {
+		return intdiv( $this->unopened_first_seconds( $o ), HOUR_IN_SECONDS ) + 1;
+	}
+
+	/**
+	 * The unit unopened_hours (the first threshold) is counted in, in
+	 * seconds: an hour, or a minute when unopened_unit is 'minutes' on a
+	 * local or development site (is_dev_site()). Minutes exist to test
+	 * unopened alerts without waiting hours, so they never apply on staging
+	 * or production, even when a database with them saved is cloned there.
+	 *
+	 * @param array|null $o Settings to check; null for the saved ones.
+	 * @return int
+	 */
+	public function unopened_unit( $o = null ) {
+		$o = $this->settings( $o );
+		$minutes = isset( $o['unopened_unit'] ) && 'minutes' === $o['unopened_unit'];
+		return ( $minutes && self::is_dev_site() ) ? MINUTE_IN_SECONDS : HOUR_IN_SECONDS;
+	}
+
+	/** Whether this is a local or development copy (wp_get_environment_type()), where testing-only settings show and apply. */
+	public static function is_dev_site() {
+		return in_array( wp_get_environment_type(), array( 'local', 'development' ), true );
+	}
+
+	/** cron_schedules filter: the one-minute recurrence MINUTE_CHECK_HOOK runs on. */
+	public function add_minute_schedule( $schedules ) {
+		$schedules['wpel_minute'] = array(
+			'interval' => MINUTE_IN_SECONDS,
+			'display'  => 'Every minute (Form Alert unopened alert testing)',
+		);
+		return $schedules;
+	}
+
+	/**
+	 * Starts or stops the every-minute unopened check to match the settings:
+	 * it runs only while the first threshold is in minutes, which the hourly
+	 * wpel_check_unopened would only catch once an hour.
+	 *
+	 * @param array|null $o Settings to match; null for the saved ones.
+	 */
+	public function sync_minute_check( $o = null ) {
+		$scheduled = wp_next_scheduled( self::MINUTE_CHECK_HOOK );
+		if ( MINUTE_IN_SECONDS === $this->unopened_unit( $o ) ) {
+			if ( ! $scheduled ) {
+				wp_schedule_event( time() + MINUTE_IN_SECONDS, 'wpel_minute', self::MINUTE_CHECK_HOOK );
+			}
+		} elseif ( $scheduled ) {
+			wp_clear_scheduled_hook( self::MINUTE_CHECK_HOOK );
+		}
+	}
+
+	/**
+	 * MINUTE_CHECK_HOOK callback. Unschedules itself once minutes no longer
+	 * apply, such as on a production copy of a database they were saved in.
+	 */
+	public function check_unopened_minutely() {
+		if ( MINUTE_IN_SECONDS !== $this->unopened_unit() ) {
+			wp_clear_scheduled_hook( self::MINUTE_CHECK_HOOK );
+			return;
+		}
+		$this->check_unopened();
 	}
 
 	/**
@@ -1306,17 +1396,18 @@ class WPEL_Mailgun_Monitor {
 
 	/**
 	 * Finds the delivered, unopened rows at alert stage $stage that were sent
-	 * at least $hours ago, moves them to the next stage and returns them.
+	 * at least $after seconds ago, moves them to the next stage and returns
+	 * them.
 	 *
 	 * @param int    $stage unopened_alerted value to look for.
-	 * @param int    $hours
+	 * @param int    $after Seconds.
 	 * @param string $scope From unopened_scope().
 	 * @return object[]
 	 */
-	private function flag_unopened( $stage, $hours, $scope ) {
+	private function flag_unopened( $stage, $after, $scope ) {
 		global $wpdb;
 		$table  = self::table();
-		$cutoff = $this->local_mysql_time( time() - $hours * HOUR_IN_SECONDS );
+		$cutoff = $this->local_mysql_time( time() - $after );
 
 		// $scope is already prepared, so it's appended rather than run through prepare() again.
 		$rows = $wpdb->get_results(
@@ -1392,13 +1483,15 @@ class WPEL_Mailgun_Monitor {
 	 * with SMS alerts on, otherwise by email.
 	 *
 	 * @param object[] $rows
-	 * @param int      $hours
+	 * @param int      $after  The threshold they passed, in seconds.
 	 * @param bool     $second Whether these are secondary notices.
 	 */
-	private function notify_unopened( $rows, $hours, $second = false ) {
+	private function notify_unopened( $rows, $after, $second = false ) {
 		$host = wp_parse_url( home_url(), PHP_URL_HOST );
 		$link = admin_url( 'admin.php?page=wpel-log&status=delivered' );
 		$tag  = $second ? ' (2nd notice)' : '';
+		// "24hrs", or "5 min" for a first alert set in minutes.
+		$for = 0 === $after % HOUR_IN_SECONDS ? ( $after / HOUR_IN_SECONDS ) . 'hrs' : ( $after / MINUTE_IN_SECONDS ) . ' min';
 
 		$groups = array();
 		foreach ( $rows as $row ) {
@@ -1411,9 +1504,9 @@ class WPEL_Mailgun_Monitor {
 			$from = $host . ( '' !== $where ? ' (' . $where . ')' : '' );
 
 			if ( 1 === $count ) {
-				$text = sprintf( "%s from %s hasn't been opened for %dhrs.", $is_form ? 'Your new form submission' : 'Your watched email', $from, $hours );
+				$text = sprintf( "%s from %s hasn't been opened for %s.", $is_form ? 'Your new form submission' : 'Your watched email', $from, $for );
 			} else {
-				$text = sprintf( "%d %s from %s haven't been opened for %dhrs.", $count, $is_form ? 'new form submissions' : 'watched emails', $from, $hours );
+				$text = sprintf( "%d %s from %s haven't been opened for %s.", $count, $is_form ? 'new form submissions' : 'watched emails', $from, $for );
 			}
 			$text .= "\nSent to: " . $this->list_of( wp_list_pluck( $group, 'recipient' ) );
 			$by    = $this->list_of( array_map( array( $this, 'submitter' ), wp_list_pluck( $group, 'headers' ) ) );
